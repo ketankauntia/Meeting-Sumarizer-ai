@@ -1,0 +1,10 @@
+mkdir spawner
+    $ npm init -y
+    $ npm i typescript
+    $ npx tsc --init
+
+    mkdir src
+        code index.ts
+    
+    ----------
+    npm install selenium-webdriver
