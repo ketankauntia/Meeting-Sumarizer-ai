@@ -7,4 +7,19 @@ mkdir spawner
         code index.ts
     
     ----------
-    npm install selenium-webdriver
+    npm install selenium-webdriver + types imported frmo quickfix
+
+ "scripts": {
+    "dev": "tsc -b && node dist/index.js"
+  },
+
+  -> npm run dev (to run) -> throws error coz of automation..
+
+
+// for the meeting unable to join.... 
+-> "Pass flags" refers to setting specific Chrome options or configurations when launching a Chrome browser instance in Selenium Grid. These flags allow you to customize the behavior of the Chrome browser to suit your automation needs. In Selenium, these flags are passed using the ChromeOptions class.
+
+-> Passing Flags to Selenium Grid
+When working with Selenium Grid, you pass these flags to the remote WebDriver by including them in the ChromeOptions and passing the capabilities to the remote driver.
+
+( https://stackoverflow.com/questions/53039551/selenium-webdriver-modifying-navigator-webdriver-flag-to-prevent-selenium-detec )
