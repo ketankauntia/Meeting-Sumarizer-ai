@@ -4,12 +4,13 @@ import { Options } from "selenium-webdriver/chrome";
 async function main() {
   //passing flags to selenium grid
   const chromeOptions = new Options();
+  chromeOptions.addArguments("--use-fake-ui-for-media-stream"); //to enable mic and camera :)
   chromeOptions.addArguments("--disable-blink-features=AutomationControlled");
 
   //WebDriver instance with Chrome
   let driver = await new Builder()
     .forBrowser(Browser.CHROME)
-    .setChromeOptions(chromeOptions)
+    .setChromeOptions(chromeOptions) //while building the chrome instance we need to set automation disabled.
     .build();
 
   try {

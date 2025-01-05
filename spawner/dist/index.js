@@ -15,11 +15,12 @@ function main() {
     return __awaiter(this, void 0, void 0, function* () {
         //passing flags to selenium grid
         const chromeOptions = new chrome_1.Options();
+        chromeOptions.addArguments("--use-fake-ui-for-media-stream");
         chromeOptions.addArguments("--disable-blink-features=AutomationControlled");
         //WebDriver instance with Chrome
         let driver = yield new selenium_webdriver_1.Builder()
             .forBrowser(selenium_webdriver_1.Browser.CHROME)
-            .setChromeOptions(chromeOptions)
+            .setChromeOptions(chromeOptions) //while building the chrome instance we need to set automation disabled.
             .build();
         try {
             yield driver.get("https://meet.google.com/nvm-osfi-gfa");
