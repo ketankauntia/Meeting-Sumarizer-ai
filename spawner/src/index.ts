@@ -15,8 +15,29 @@ async function main() {
 
   try {
     await driver.get("https://meet.google.com/nvm-osfi-gfa");
-    // await driver.findElement(By.name("q")).sendKeys("webdriver", Key.RETURN);
-    await driver.wait(until.titleIs("webdriver - Google Search"), 20000);
+
+    // waiting for the elements of the page to load
+    await driver.sleep(3000);
+
+    const popupButton = await driver.wait(
+      until.elementLocated(By.xpath("//span[contains(text(),'Got it')]"))
+    );
+    popupButton.click();
+
+    const nameInput = await driver.wait(until.elementLocated(By.id("c11")), 10000);
+    await nameInput.clear();
+    await nameInput.click();
+    await nameInput.sendKeys("value", "Meeting Rec Bot");
+    // await driver.wait(until.elementLocated(By.id("c12314")), 10000);
+
+    const buttonElement = await driver.wait(
+      until.elementLocated(
+        By.xpath("//span[contains(text(),'Ask to join') or contains(text(),'Join')]")
+      )
+    );
+
+    await buttonElement.click();
+    await driver.wait(until.elementLocated(By.id("c12314")), 10000);
   } finally {
     await driver.quit();
   }
