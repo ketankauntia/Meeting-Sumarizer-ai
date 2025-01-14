@@ -3,7 +3,7 @@ import { Options } from 'selenium-webdriver/chrome';
 
 async function openMeet(driver: WebDriver) {
   try {
-    await driver.get('https://meet.google.com/foi-ujiv-tst');
+    await driver.get('https://meet.google.com/gmy-cnvh-whq');
 
     // waiting for the elements of the page to load
     await driver.sleep(3000);
@@ -55,22 +55,58 @@ async function getDriver() {
   return driver;
 }
 
-async function startScreenShare(driver: WebDriver) {
-  //
-  console.log('############## screen Share entered ##############');
-  // const response = await driver.executeScript(`
-  //   window.navigator.mediaDevices.getDisplayMedia().then(stream=>{
-  //   const videoEl = document.createElement('video');
-  //   videoEl.srcObject = stream;
-  //   videoEl.play();
-  //   document.body.appendChild(videoEl);});
-  //   `);
+async function startScreenshare(driver: WebDriver) {
+  console.log('startScreensharecalled');
   const response = await driver.executeScript(`
-    console.log("hi there");
-    `);
-
+      function wait(delayInMS) {
+          return new Promise((resolve) => setTimeout(resolve, delayInMS));
+      }
+      function startRecording(stream, lengthInMS) {
+          let recorder = new MediaRecorder(stream);
+          let data = [];
+          
+          recorder.ondataavailable = (event) => data.push(event.data);
+          recorder.start();
+          
+          let stopped = new Promise((resolve, reject) => {
+              recorder.onstop = resolve;
+              recorder.onerror = (event) => reject(event.name);
+          });
+          
+          let recorded = wait(lengthInMS).then(() => {
+              if (recorder.state === "recording") {
+              recorder.stop();
+              }
+          });
+          
+          return Promise.all([stopped, recorded]).then(() => data);
+      }
+    
+      console.log("before mediadevices")
+      window.navigator.mediaDevices.getDisplayMedia({
+          video: {
+            displaySurface: "browser"
+          },
+          audio: true,
+          preferCurrentTab: true
+      }).then(async stream => {
+          // stream should be streamed via WebRTC to a server
+          console.log("before start recording")
+          const recordedChunks = await startRecording(stream, 20000);
+          console.log("after start recording")
+          let recordedBlob = new Blob(recordedChunks, { type: "video/webm" });
+          const recording = document.createElement("video");
+          recording.src = URL.createObjectURL(recordedBlob);
+          const downloadButton = document.createElement("a");
+          downloadButton.href = recording.src;
+          downloadButton.download = "RecordedVideo.webm";    
+          downloadButton.click();
+          console.log("after download button click")
+      })
+      
+  `);
   console.log(response);
-  driver.sleep(900000);
+  driver.sleep(1000000);
 }
 
 async function main() {
@@ -82,7 +118,7 @@ async function main() {
   //wait until the admin approves the bot to join
 
   //starting screensharing
-  await startScreenShare(driver);
+  await startScreenshare(driver);
 }
 
 main();

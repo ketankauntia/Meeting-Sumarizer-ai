@@ -14,7 +14,7 @@ const chrome_1 = require("selenium-webdriver/chrome");
 function openMeet(driver) {
     return __awaiter(this, void 0, void 0, function* () {
         try {
-            yield driver.get('https://meet.google.com/foi-ujiv-tst');
+            yield driver.get('https://meet.google.com/gmy-cnvh-whq');
             // waiting for the elements of the page to load
             yield driver.sleep(3000);
             const popupButton = yield driver.wait(selenium_webdriver_1.until.elementLocated(selenium_webdriver_1.By.xpath("//span[contains(text(),'Got it')]")));
@@ -29,10 +29,10 @@ function openMeet(driver) {
             const buttonElement = yield driver.wait(selenium_webdriver_1.until.elementLocated(selenium_webdriver_1.By.xpath("//span[contains(text(),'Ask to join')]")));
             yield buttonElement.click();
             console.log('############ Request to join meeting sent!! ###########');
-            yield driver.wait(selenium_webdriver_1.until.elementLocated(selenium_webdriver_1.By.id('c12314')), 900000);
+            // await driver.wait(until.elementLocated(By.id('c12314')), 900000);
         }
         finally {
-            yield driver.quit();
+            // await driver.quit();
         }
     });
 }
@@ -53,9 +53,60 @@ function getDriver() {
         return driver;
     });
 }
-function startScreenShare(driver) {
-    //
-    driver.sleep(900000);
+function startScreenshare(driver) {
+    return __awaiter(this, void 0, void 0, function* () {
+        console.log('startScreensharecalled');
+        const response = yield driver.executeScript(`
+      function wait(delayInMS) {
+          return new Promise((resolve) => setTimeout(resolve, delayInMS));
+      }
+      function startRecording(stream, lengthInMS) {
+          let recorder = new MediaRecorder(stream);
+          let data = [];
+          
+          recorder.ondataavailable = (event) => data.push(event.data);
+          recorder.start();
+          
+          let stopped = new Promise((resolve, reject) => {
+              recorder.onstop = resolve;
+              recorder.onerror = (event) => reject(event.name);
+          });
+          
+          let recorded = wait(lengthInMS).then(() => {
+              if (recorder.state === "recording") {
+              recorder.stop();
+              }
+          });
+          
+          return Promise.all([stopped, recorded]).then(() => data);
+      }
+    
+      console.log("before mediadevices")
+      window.navigator.mediaDevices.getDisplayMedia({
+          video: {
+            displaySurface: "browser"
+          },
+          audio: true,
+          preferCurrentTab: true
+      }).then(async stream => {
+          // stream should be streamed via WebRTC to a server
+          console.log("before start recording")
+          const recordedChunks = await startRecording(stream, 20000);
+          console.log("after start recording")
+          let recordedBlob = new Blob(recordedChunks, { type: "video/webm" });
+          const recording = document.createElement("video");
+          recording.src = URL.createObjectURL(recordedBlob);
+          const downloadButton = document.createElement("a");
+          downloadButton.href = recording.src;
+          downloadButton.download = "RecordedVideo.webm";    
+          downloadButton.click();
+          console.log("after download button click")
+      })
+      
+  `);
+        console.log(response);
+        driver.sleep(1000000);
+    });
 }
 function main() {
     return __awaiter(this, void 0, void 0, function* () {
@@ -64,13 +115,14 @@ function main() {
         yield openMeet(driver);
         //wait until the admin approves the bot to join
         //starting screensharing
-        yield startScreenShare(driver);
+        yield startScreenshare(driver);
     });
 }
 main();
 // screen recording code checked in console
-// window.navigator.mediaDevices.getUserMedia().then((stream) => {
+// window.navigator.mediaDevices.getDisplayMedia().then(stream=>{
 //   const videoEl = document.createElement('video');
-//   videoEl.srcObject = stream;
-//   document.getElementsByClassName('qdOxv-fmcmS-wGMbrd')[0].appendChild(videoEl);
+// videoEl.srcObject = stream;
+//   videoEl.play();
+// document.getElementsByClassName('qdOxv-fmcmS-yrriRe')[0].appendChild(videoEl);
 // });
