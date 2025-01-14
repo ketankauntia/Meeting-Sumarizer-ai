@@ -14,7 +14,7 @@ const chrome_1 = require("selenium-webdriver/chrome");
 function openMeet(driver) {
     return __awaiter(this, void 0, void 0, function* () {
         try {
-            yield driver.get('https://meet.google.com/mmo-hgha-cay');
+            yield driver.get('https://meet.google.com/foi-ujiv-tst');
             // waiting for the elements of the page to load
             yield driver.sleep(3000);
             const popupButton = yield driver.wait(selenium_webdriver_1.until.elementLocated(selenium_webdriver_1.By.xpath("//span[contains(text(),'Got it')]")));
@@ -29,7 +29,7 @@ function openMeet(driver) {
             const buttonElement = yield driver.wait(selenium_webdriver_1.until.elementLocated(selenium_webdriver_1.By.xpath("//span[contains(text(),'Ask to join')]")));
             yield buttonElement.click();
             console.log('############ Request to join meeting sent!! ###########');
-            yield driver.wait(selenium_webdriver_1.until.elementLocated(selenium_webdriver_1.By.id('c12314')), 10000);
+            yield driver.wait(selenium_webdriver_1.until.elementLocated(selenium_webdriver_1.By.id('c12314')), 900000);
         }
         finally {
             yield driver.quit();
@@ -42,6 +42,9 @@ function getDriver() {
         const chromeOptions = new chrome_1.Options({});
         chromeOptions.addArguments('--use-fake-ui-for-media-stream'); //to enable mic and camera :)
         chromeOptions.addArguments('--disable-blink-features=AutomationControlled');
+        chromeOptions.addArguments('--window-aize=1080,720');
+        chromeOptions.addArguments('--auto-select-desktop-capture-source=[RECORD]');
+        chromeOptions.addArguments('--enable-usermedia-screen-capturing');
         //WebDriver instance with Chrome
         let driver = yield new selenium_webdriver_1.Builder()
             .forBrowser(selenium_webdriver_1.Browser.CHROME)
@@ -50,6 +53,10 @@ function getDriver() {
         return driver;
     });
 }
+function startScreenShare(driver) {
+    //
+    driver.sleep(900000);
+}
 function main() {
     return __awaiter(this, void 0, void 0, function* () {
         const driver = yield getDriver();
@@ -57,6 +64,13 @@ function main() {
         yield openMeet(driver);
         //wait until the admin approves the bot to join
         //starting screensharing
+        yield startScreenShare(driver);
     });
 }
 main();
+// screen recording code checked in console
+// window.navigator.mediaDevices.getUserMedia().then((stream) => {
+//   const videoEl = document.createElement('video');
+//   videoEl.srcObject = stream;
+//   document.getElementsByClassName('qdOxv-fmcmS-wGMbrd')[0].appendChild(videoEl);
+// });

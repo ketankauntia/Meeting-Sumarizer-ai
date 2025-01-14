@@ -3,7 +3,7 @@ import { Options } from 'selenium-webdriver/chrome';
 
 async function openMeet(driver: WebDriver) {
   try {
-    await driver.get('https://meet.google.com/mmo-hgha-cay');
+    await driver.get('https://meet.google.com/foi-ujiv-tst');
 
     // waiting for the elements of the page to load
     await driver.sleep(3000);
@@ -31,9 +31,9 @@ async function openMeet(driver: WebDriver) {
     await buttonElement.click();
 
     console.log('############ Request to join meeting sent!! ###########');
-    await driver.wait(until.elementLocated(By.id('c12314')), 10000);
+    // await driver.wait(until.elementLocated(By.id('c12314')), 900000);
   } finally {
-    await driver.quit();
+    // await driver.quit();
   }
 }
 
@@ -42,6 +42,9 @@ async function getDriver() {
   const chromeOptions = new Options({});
   chromeOptions.addArguments('--use-fake-ui-for-media-stream'); //to enable mic and camera :)
   chromeOptions.addArguments('--disable-blink-features=AutomationControlled');
+  chromeOptions.addArguments('--window-aize=1080,720');
+  chromeOptions.addArguments('--auto-select-desktop-capture-source=[RECORD]');
+  chromeOptions.addArguments('--enable-usermedia-screen-capturing');
 
   //WebDriver instance with Chrome
   let driver = await new Builder()
@@ -50,6 +53,24 @@ async function getDriver() {
     .build();
 
   return driver;
+}
+
+async function startScreenShare(driver: WebDriver) {
+  //
+  console.log('############## screen Share entered ##############');
+  // const response = await driver.executeScript(`
+  //   window.navigator.mediaDevices.getDisplayMedia().then(stream=>{
+  //   const videoEl = document.createElement('video');
+  //   videoEl.srcObject = stream;
+  //   videoEl.play();
+  //   document.body.appendChild(videoEl);});
+  //   `);
+  const response = await driver.executeScript(`
+    console.log("hi there");
+    `);
+
+  console.log(response);
+  driver.sleep(900000);
 }
 
 async function main() {
@@ -61,6 +82,16 @@ async function main() {
   //wait until the admin approves the bot to join
 
   //starting screensharing
+  await startScreenShare(driver);
 }
 
 main();
+
+// screen recording code checked in console
+// window.navigator.mediaDevices.getDisplayMedia().then(stream=>{
+//   const videoEl = document.createElement('video');
+// videoEl.srcObject = stream;
+//   videoEl.play();
+// document.getElementsByClassName('qdOxv-fmcmS-yrriRe')[0].appendChild(videoEl);
+
+// });
