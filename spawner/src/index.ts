@@ -90,10 +90,13 @@ async function startScreenshare(driver: WebDriver) {
           audio: true,
           preferCurrentTab: true
       }).then(async stream => {
+
           // stream should be streamed via WebRTC to a server
           console.log("before start recording")
+      
           const recordedChunks = await startRecording(stream, 20000);
           console.log("after start recording")
+      
           let recordedBlob = new Blob(recordedChunks, { type: "video/webm" });
           const recording = document.createElement("video");
           recording.src = URL.createObjectURL(recordedBlob);
@@ -101,6 +104,7 @@ async function startScreenshare(driver: WebDriver) {
           downloadButton.href = recording.src;
           downloadButton.download = "RecordedVideo.webm";    
           downloadButton.click();
+      
           console.log("after download button click")
       })
       
