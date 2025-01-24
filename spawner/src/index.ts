@@ -61,6 +61,7 @@ async function startScreenshare(driver: WebDriver) {
       function wait(delayInMS) {
           return new Promise((resolve) => setTimeout(resolve, delayInMS));
       }
+      
       function startRecording(stream, lengthInMS) {
           let recorder = new MediaRecorder(stream);
           let data = [];
@@ -75,27 +76,57 @@ async function startScreenshare(driver: WebDriver) {
           
           let recorded = wait(lengthInMS).then(() => {
               if (recorder.state === "recording") {
-              recorder.stop();
+                  recorder.stop();
               }
           });
           
           return Promise.all([stopped, recorded]).then(() => data);
       }
     
-      console.log("before mediadevices")
+      console.log("before mediadevices");
       window.navigator.mediaDevices.getDisplayMedia({
           video: {
             displaySurface: "browser"
           },
           audio: true,
           preferCurrentTab: true
-      }).then(async stream => {
+      }).then(async screenStream => {
+          console.log("before start recording");
 
-          // stream should be streamed via WebRTC to a server
-          console.log("before start recording")
-      
-          const recordedChunks = await startRecording(stream, 20000);
-          console.log("after start recording")
+          // Added audio processing to mix multiple audio tracks into one
+          const audioContext = new AudioContext();
+          const screenAudioStream = audioContext.createMediaStreamSource(screenStream);
+
+          // Extract audio elements if they exist
+          const audioEl1 = document.querySelectorAll("audio")[0];
+          const audioEl2 = document.querySelectorAll("audio")[1];
+          const audioEl3 = document.querySelectorAll("audio")[2];
+
+          // Connect audio elements to MediaStreamDestination
+          const dest = audioContext.createMediaStreamDestination();
+          if (audioEl1 && audioEl1.srcObject) {
+              const audioElStream1 = audioContext.createMediaStreamSource(audioEl1.srcObject);
+              audioElStream1.connect(dest);
+          }
+          if (audioEl2 && audioEl2.srcObject) {
+              const audioElStream2 = audioContext.createMediaStreamSource(audioEl2.srcObject);
+              audioElStream2.connect(dest);
+          }
+          if (audioEl3 && audioEl3.srcObject) {
+              const audioElStream3 = audioContext.createMediaStreamSource(audioEl3.srcObject);
+              audioElStream3.connect(dest);
+          }
+          screenAudioStream.connect(dest);
+
+          // Combine screen and audio streams
+          const combinedStream = new MediaStream([
+              ...screenStream.getVideoTracks(),
+              ...dest.stream.getAudioTracks()
+          ]);
+          
+          // Stream should be streamed via WebRTC to a server
+          const recordedChunks = await startRecording(combinedStream, 20000); // Adjusted recording duration to 20 seconds
+          console.log("after start recording");
       
           let recordedBlob = new Blob(recordedChunks, { type: "video/webm" });
           const recording = document.createElement("video");
@@ -105,12 +136,28 @@ async function startScreenshare(driver: WebDriver) {
           downloadButton.download = "RecordedVideo.webm";    
           downloadButton.click();
       
-          console.log("after download button click")
-      })
-      
+          console.log("after download button click");
+
+          // Clean up streams
+          screenStream.getTracks().forEach(track => track.stop()); // Ensure proper cleanup
+      }).catch(error => {
+          console.error("Error during screen capture:", error); // Error handling
+      });
   `);
   console.log(response);
   driver.sleep(1000000);
+}
+
+async function main() {
+  const driver = await getDriver();
+
+  // joining meet
+  await openMeet(driver);
+
+  // wait until the admin approves the bot to join
+
+  // starting screensharing
+  await startScreenshare(driver);
 }
 
 async function main() {
