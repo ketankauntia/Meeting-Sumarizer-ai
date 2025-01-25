@@ -1,12 +1,18 @@
 import { Builder, Browser, By, Key, until, WebDriver } from 'selenium-webdriver';
 import { Options } from 'selenium-webdriver/chrome';
 
+import './server'; // Just run the server
+
 async function openMeet(driver: WebDriver) {
   try {
-    await driver.get('https://meet.google.com/gmy-cnvh-whq');
+    await driver.get('https://meet.google.com/rza-tdqt-pne');
 
+    console.log('google link entered');
+    console.log('driver sleep entered');
     // waiting for the elements of the page to load
-    await driver.sleep(3000);
+    await driver.sleep(10000);
+
+    console.log('driver sleep done');
 
     const popupButton = await driver.wait(
       until.elementLocated(By.xpath("//span[contains(text(),'Got it')]"))
@@ -40,11 +46,14 @@ async function openMeet(driver: WebDriver) {
 async function getDriver() {
   //passing flags to selenium grid
   const chromeOptions = new Options({});
-  chromeOptions.addArguments('--use-fake-ui-for-media-stream'); //to enable mic and camera :)
   chromeOptions.addArguments('--disable-blink-features=AutomationControlled');
-  chromeOptions.addArguments('--window-aize=1080,720');
+  chromeOptions.addArguments('--use-fake-ui-for-media-stream');
+  chromeOptions.addArguments('--window-size=1080,720');
+  chromeOptions.addArguments('--auto-select-desktop-capture-source=[RECORD]');
   chromeOptions.addArguments('--auto-select-desktop-capture-source=[RECORD]');
   chromeOptions.addArguments('--enable-usermedia-screen-capturing');
+  chromeOptions.addArguments('--auto-select-tab-capture-source-by-title="Meet"');
+  chromeOptions.addArguments('--allow-running-insecure-content');
 
   //WebDriver instance with Chrome
   let driver = await new Builder()
@@ -56,54 +65,53 @@ async function getDriver() {
 }
 
 async function startScreenshare(driver: WebDriver) {
-  console.log('startScreensharecalled');
+  console.log('startScreenshare called');
   const response = await driver.executeScript(`
       function wait(delayInMS) {
           return new Promise((resolve) => setTimeout(resolve, delayInMS));
       }
-      
-      function startRecording(stream, lengthInMS) {
+
+      async function startRecording(stream, lengthInMS) {
           let recorder = new MediaRecorder(stream);
           let data = [];
-          
+
           recorder.ondataavailable = (event) => data.push(event.data);
           recorder.start();
-          
+
           let stopped = new Promise((resolve, reject) => {
               recorder.onstop = resolve;
               recorder.onerror = (event) => reject(event.name);
           });
-          
+
           let recorded = wait(lengthInMS).then(() => {
               if (recorder.state === "recording") {
                   recorder.stop();
               }
           });
-          
+
           return Promise.all([stopped, recorded]).then(() => data);
       }
-    
-      console.log("before mediadevices");
-      window.navigator.mediaDevices.getDisplayMedia({
-          video: {
-            displaySurface: "browser"
-          },
-          audio: true,
-          preferCurrentTab: true
-      }).then(async screenStream => {
+
+      console.log("before media devices");
+      try {
+          const screenStream = await window.navigator.mediaDevices.getDisplayMedia({
+              video: { displaySurface: "browser" },
+              audio: true,
+              preferCurrentTab: true
+          });
+
           console.log("before start recording");
 
-          // Added audio processing to mix multiple audio tracks into one
+          // Audio processing to mix multiple audio tracks into one
           const audioContext = new AudioContext();
           const screenAudioStream = audioContext.createMediaStreamSource(screenStream);
 
-          // Extract audio elements if they exist
+          // Connect audio elements to MediaStreamDestination
+          const dest = audioContext.createMediaStreamDestination();
           const audioEl1 = document.querySelectorAll("audio")[0];
           const audioEl2 = document.querySelectorAll("audio")[1];
           const audioEl3 = document.querySelectorAll("audio")[2];
 
-          // Connect audio elements to MediaStreamDestination
-          const dest = audioContext.createMediaStreamDestination();
           if (audioEl1 && audioEl1.srcObject) {
               const audioElStream1 = audioContext.createMediaStreamSource(audioEl1.srcObject);
               audioElStream1.connect(dest);
@@ -123,26 +131,40 @@ async function startScreenshare(driver: WebDriver) {
               ...screenStream.getVideoTracks(),
               ...dest.stream.getAudioTracks()
           ]);
-          
-          // Stream should be streamed via WebRTC to a server
-          const recordedChunks = await startRecording(combinedStream, 20000); // Adjusted recording duration to 20 seconds
-          console.log("after start recording");
-      
-          let recordedBlob = new Blob(recordedChunks, { type: "video/webm" });
-          const recording = document.createElement("video");
-          recording.src = URL.createObjectURL(recordedBlob);
-          const downloadButton = document.createElement("a");
-          downloadButton.href = recording.src;
-          downloadButton.download = "RecordedVideo.webm";    
-          downloadButton.click();
-      
-          console.log("after download button click");
 
-          // Clean up streams
-          screenStream.getTracks().forEach(track => track.stop()); // Ensure proper cleanup
-      }).catch(error => {
-          console.error("Error during screen capture:", error); // Error handling
-      });
+          // Create video element to display stream
+          const videoElement = document.createElement('video');
+          videoElement.srcObject = combinedStream;
+          videoElement.autoplay = true;
+          videoElement.controls = true;
+          document.body.appendChild(videoElement);
+
+          // WebSocket connection to backend
+          const socket = new WebSocket("ws://localhost:8080");
+
+          // Handle WebSocket errors
+          socket.onerror = (error) => {
+              console.error("WebSocket Error: ", error);
+          };
+
+          const mediaRecorder = new MediaRecorder(combinedStream);
+          mediaRecorder.ondataavailable = (event) => {
+              // Send chunks of data to backend via WebSocket
+              socket.send(event.data);
+          };
+
+          // Start recording in chunks (5 seconds)
+          mediaRecorder.start(5000);
+
+          // Stop recording after a certain duration (60 seconds for demo)
+          setTimeout(() => {
+              mediaRecorder.stop();
+              socket.close();
+          }, 60000);  // Stop after 60 seconds for demonstration
+
+      } catch (error) {
+          console.error("Error during screen capture:", error);
+      }
   `);
   console.log(response);
   driver.sleep(1000000);
@@ -151,21 +173,10 @@ async function startScreenshare(driver: WebDriver) {
 async function main() {
   const driver = await getDriver();
 
-  // joining meet
-  await openMeet(driver);
-
-  // wait until the admin approves the bot to join
-
-  // starting screensharing
-  await startScreenshare(driver);
-}
-
-async function main() {
-  const driver = await getDriver();
-
   //joining meet
   await openMeet(driver);
 
+  await new Promise((x) => setTimeout(x, 20000));
   //wait until the admin approves the bot to join
 
   //starting screensharing
