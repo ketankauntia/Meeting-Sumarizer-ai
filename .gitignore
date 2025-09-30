@@ -3,3 +3,8 @@ node_modules/
 dist/
 
 steps.txt
+
+prompt.txt
+check.ts
+index1.ts
+index-cp.ts
