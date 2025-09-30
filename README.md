@@ -1,3 +1,6 @@
+UI : <img width="1920" height="859" alt="image" src="https://github.com/user-attachments/assets/6c6dbc6e-0e08-4043-b91c-1a8ff4553797" />
+
+
 1. Install all packages
 ```
     cd frontend
