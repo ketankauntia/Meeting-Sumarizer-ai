@@ -103,6 +103,155 @@ async function leaveMeeting(driver: WebDriver) {
   }
 }
 
+async function enableCaptions(driver: WebDriver) {
+  try {
+    broadcastLog('📝 Enabling captions...');
+    const captionButton = await driver.wait(
+      until.elementLocated(By.css('button[aria-label="Turn on captions"]')),
+      10000
+    );
+    await captionButton.click();
+    broadcastLog('✅ Captions enabled');
+    
+    // Wait for caption container to load
+    await driver.sleep(2000);
+    
+    // Inject caption capture script
+    const captionScript = `
+    window.captionObserver = {
+      observer: null,
+      captionData: [],
+      lastCaption: null,
+      debounceTimeout: null,
+      
+      init: function() {
+        const mainContainer = document.querySelector('div[jsname="dsyhDe"]');
+        if (!mainContainer) {
+          console.error('[Caption] Main caption container not found');
+          return false;
+        }
+        
+        this.observer = new MutationObserver((mutations) => {
+          for (const mutation of mutations) {
+            if (mutation.type === 'childList' || mutation.type === 'characterData') {
+              if (this.debounceTimeout) {
+                clearTimeout(this.debounceTimeout);
+              }
+              
+              this.debounceTimeout = setTimeout(() => {
+                const caption = this.getCurrentCaptionState(mainContainer);
+                if (caption && this.shouldRecordCaption(caption)) {
+                  this.captionData.push({
+                    timestamp: new Date().toISOString(),
+                    speaker: caption.speaker,
+                    text: caption.text
+                  });
+                  
+                  this.lastCaption = {
+                    ...caption,
+                    timestamp: Date.now()
+                  };
+                  
+                  console.log('[Caption] New caption:', caption);
+                }
+              }, 300);
+            }
+          }
+        });
+        
+        this.observer.observe(mainContainer, {
+          childList: true,
+          subtree: true,
+          characterData: true,
+          attributes: false,
+        });
+        
+        console.log('[Caption] Caption observer initialized');
+        this.startPeriodicSaving();
+        return true;
+      },
+      
+      getCurrentCaptionState: function(container) {
+        try {
+          const captionElement = container.querySelector('div[jsname="tgaKEf"] span:last-child');
+          const speakerElement = container.querySelector('.KcIKyf');
+          
+          if (captionElement && speakerElement) {
+            return {
+              text: captionElement.textContent.trim(),
+              speaker: speakerElement.textContent.trim()
+            };
+          }
+          return null;
+        } catch (error) {
+          console.error('[Caption] Error getting caption state:', error);
+          return null;
+        }
+      },
+      
+      shouldRecordCaption: function(caption) {
+        if (!this.lastCaption) return true;
+        if (!caption.text) return false;
+        
+        const isSameContent = 
+          this.lastCaption.speaker === caption.speaker && 
+          this.lastCaption.text === caption.text;
+          
+        const timeSinceLastCaption = Date.now() - this.lastCaption.timestamp;
+        
+        return !isSameContent || timeSinceLastCaption > 1000;
+      },
+      
+      startPeriodicSaving: async function() {
+        setInterval(() => {
+          if (this.captionData.length > 0) {
+            const transcript = {
+              recordingDate: new Date().toISOString(),
+              captions: this.captionData.slice()
+            };
+            
+            console.log('[Caption] Saving batch:', this.captionData.length, 'captions');
+            
+            fetch('http://localhost:3001/save-captions', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(transcript)
+            })
+            .then(() => {
+              this.captionData = [];
+              console.log('[Caption] Captions saved successfully');
+            })
+            .catch(err => {
+              console.error('[Caption] Error saving captions:', err);
+            });
+          }
+        }, 5000);
+      },
+      
+      stop: function() {
+        if (this.observer) {
+          this.observer.disconnect();
+          this.observer = null;
+          if (this.debounceTimeout) {
+            clearTimeout(this.debounceTimeout);
+          }
+          console.log('[Caption] Caption observer stopped');
+        }
+      }
+    };
+
+    window.captionObserver.init();
+    `;
+    
+    await driver.executeScript(captionScript);
+    broadcastLog('✅ Caption capture initialized');
+  } catch (error) {
+    broadcastLog('⚠️ Could not enable captions: ' + error);
+  }
+}
+
 async function startScreenshare(driver: WebDriver) {
   broadcastLog('🎬 Initializing screen recording...');
   
@@ -322,6 +471,9 @@ async function main(meetUrl: string) {
     broadcastLog('⏰ Waiting 20 seconds for host approval...');
     await new Promise((x) => setTimeout(x, 20000));
     //wait until the admin approves the bot to join
+
+    //enable captions
+    await enableCaptions(driver);
 
     //starting screensharing
     await startScreenshare(driver);

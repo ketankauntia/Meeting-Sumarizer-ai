@@ -7,7 +7,9 @@ export default function Home() {
   const [status, setStatus] = useState('idle'); // idle, recording, stopped
   const [error, setError] = useState('');
   const [logs, setLogs] = useState<string[]>([]);
-  const [recordingDetails, setRecordingDetails] = useState<{filename: string; size: string; duration: string} | null>(null);
+  const [recordingDetails, setRecordingDetails] = useState<{filename: string; size: string; duration: string; captionsCount?: number} | null>(null);
+  const [summary, setSummary] = useState<string>('');
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
 
@@ -107,7 +109,8 @@ export default function Home() {
         setRecordingDetails({
           filename: data.filename || 'recording.webm',
           size: data.size || 'Unknown',
-          duration: data.duration || 'Unknown'
+          duration: data.duration || 'Unknown',
+          captionsCount: data.captionsCount || 0
         });
         
         setTimeout(() => {
@@ -121,6 +124,29 @@ export default function Home() {
     } catch {
       setError('Failed to stop recording. Check backend logs.');
       setStatus('idle');
+    }
+  };
+
+  const handleGenerateSummary = async () => {
+    setIsGeneratingSummary(true);
+    setError('');
+
+    try {
+      const response = await fetch('http://localhost:3001/generate-summary', {
+        method: 'POST',
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        setSummary(data.summary);
+      } else {
+        setError(data.message || 'Failed to generate summary');
+      }
+    } catch {
+      setError('Failed to generate summary. Check backend logs and make sure GEMINI_API_KEY is set.');
+    } finally {
+      setIsGeneratingSummary(false);
     }
   };
 
@@ -267,10 +293,52 @@ export default function Home() {
                   <span className="text-gray-400">Duration</span>
                   <span className="text-white font-semibold">{recordingDetails.duration}</span>
                 </div>
+                {recordingDetails.captionsCount !== undefined && (
+                  <div className="flex justify-between items-center p-2 bg-black rounded-lg">
+                    <span className="text-gray-400">Captions</span>
+                    <span className="text-white font-semibold">{recordingDetails.captionsCount} captured</span>
+                  </div>
+                )}
                 <div className="mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-zinc-800">
                   <p className="text-xs text-gray-500 break-all">
                     📁 Location: <span className="text-gray-400 font-mono">spawner/recordings/</span>
                   </p>
+                </div>
+                
+                {/* Generate Summary Button */}
+                {recordingDetails.captionsCount && recordingDetails.captionsCount > 0 && (
+                  <button
+                    onClick={handleGenerateSummary}
+                    disabled={isGeneratingSummary}
+                    className="w-full mt-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white py-2.5 px-4 rounded-lg text-sm font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isGeneratingSummary ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <span className="animate-spin">⚙️</span>
+                        Generating Summary...
+                      </span>
+                    ) : (
+                      <span className="flex items-center justify-center gap-2">
+                        <span>🤖</span>
+                        Generate AI Summary
+                      </span>
+                    )}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Summary Display */}
+          {summary && (
+            <div className="bg-zinc-900 border border-blue-500/50 rounded-xl p-4 sm:p-6 shadow-2xl">
+              <div className="flex items-center gap-2 mb-3 sm:mb-4">
+                <span className="text-xl sm:text-2xl">📄</span>
+                <h3 className="text-base sm:text-lg font-semibold text-blue-400">AI Summary</h3>
+              </div>
+              <div className="prose prose-invert prose-sm max-w-none bg-black p-4 rounded-lg overflow-auto max-h-96">
+                <div className="text-gray-300 whitespace-pre-wrap text-xs sm:text-sm">
+                  {summary}
                 </div>
               </div>
             </div>
