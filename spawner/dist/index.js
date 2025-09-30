@@ -12,29 +12,32 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const selenium_webdriver_1 = require("selenium-webdriver");
 const chrome_1 = require("selenium-webdriver/chrome");
 require("./server"); // Just run the server
+const server_1 = require("./server");
 // Store active driver globally
 let activeDriver = null;
 function openMeet(driver, meetUrl) {
     return __awaiter(this, void 0, void 0, function* () {
         try {
             yield driver.get(meetUrl);
-            console.log('google link entered');
-            console.log('driver sleep entered');
+            (0, server_1.broadcastLog)('🌐 Google Meet page loaded');
+            (0, server_1.broadcastLog)('⏳ Waiting for page elements to load (10s)...');
             // waiting for the elements of the page to load
             yield driver.sleep(10000);
-            console.log('driver sleep done');
+            (0, server_1.broadcastLog)('✅ Page elements loaded');
             const popupButton = yield driver.wait(selenium_webdriver_1.until.elementLocated(selenium_webdriver_1.By.xpath("//span[contains(text(),'Got it')]")));
             popupButton.click();
+            (0, server_1.broadcastLog)('👆 Clicked "Got it" button');
             // const nameInput = await driver.wait(until.elementLocated(By.id("c11")), 10000);
             const nameInput = yield driver.wait(selenium_webdriver_1.until.elementLocated(selenium_webdriver_1.By.xpath('//input[@placeholder="Your name"]')), 10000);
             yield nameInput.clear();
             yield nameInput.click();
             yield nameInput.sendKeys('value', 'Meeting Rec Bot');
+            (0, server_1.broadcastLog)('👤 Entered bot name: "Meeting Rec Bot"');
             yield driver.sleep(2000);
             // await driver.wait(until.elementLocated(By.id('c12314')), 10000);
             const buttonElement = yield driver.wait(selenium_webdriver_1.until.elementLocated(selenium_webdriver_1.By.xpath("//span[contains(text(),'Ask to join')]")));
             yield buttonElement.click();
-            console.log('############ Request to join meeting sent!! ###########');
+            (0, server_1.broadcastLog)('📞 Request to join meeting sent!');
             // await driver.wait(until.elementLocated(By.id('c12314')), 900000);
         }
         finally {
@@ -44,7 +47,7 @@ function openMeet(driver, meetUrl) {
 }
 function getDriver() {
     return __awaiter(this, void 0, void 0, function* () {
-        console.log('📝 Setting up Chrome options...');
+        (0, server_1.broadcastLog)('📝 Setting up Chrome options...');
         const chrome = require('selenium-webdriver/chrome');
         const service = new chrome.ServiceBuilder(require('chromedriver').path);
         const chromeOptions = new chrome_1.Options();
@@ -55,44 +58,44 @@ function getDriver() {
         chromeOptions.addArguments('--no-sandbox');
         chromeOptions.addArguments('--disable-dev-shm-usage');
         chromeOptions.addArguments('--disable-gpu');
-        console.log('🚀 Building WebDriver with explicit ChromeDriver path...');
+        (0, server_1.broadcastLog)('🚗 Building Chrome WebDriver...');
         let driver = yield new selenium_webdriver_1.Builder()
             .forBrowser(selenium_webdriver_1.Browser.CHROME)
             .setChromeOptions(chromeOptions)
             .setChromeService(service)
             .build();
-        console.log('✅ WebDriver built successfully!');
+        (0, server_1.broadcastLog)('✅ Chrome WebDriver ready!');
         return driver;
     });
 }
 function leaveMeeting(driver) {
     return __awaiter(this, void 0, void 0, function* () {
         try {
-            console.log('Attempting to leave meeting...');
+            (0, server_1.broadcastLog)('👋 Attempting to leave meeting...');
             // Click the "Leave call" button using the aria-label
             const leaveButton = yield driver.wait(selenium_webdriver_1.until.elementLocated(selenium_webdriver_1.By.xpath("//button[@aria-label='Leave call']")), 5000);
             yield leaveButton.click();
-            console.log('✅ Left the meeting successfully');
+            (0, server_1.broadcastLog)('✅ Left the meeting successfully');
             // Wait a bit for cleanup
             yield driver.sleep(2000);
         }
         catch (error) {
-            console.error('Error leaving meeting:', error);
+            (0, server_1.broadcastLog)('⚠️ Error leaving meeting: ' + error);
             // If button not found, try alternative selector
             try {
                 const altButton = yield driver.findElement(selenium_webdriver_1.By.css("button[aria-label='Leave call']"));
                 yield altButton.click();
-                console.log('✅ Left meeting using alternative selector');
+                (0, server_1.broadcastLog)('✅ Left meeting using alternative selector');
             }
             catch (e) {
-                console.error('Could not find leave button with any selector');
+                (0, server_1.broadcastLog)('❌ Could not find leave button');
             }
         }
     });
 }
 function startScreenshare(driver) {
     return __awaiter(this, void 0, void 0, function* () {
-        console.log('startScreenshare called');
+        (0, server_1.broadcastLog)('🎬 Initializing screen recording...');
         // Create a button and click it to generate user gesture
         yield driver.executeScript(`
     const btn = document.createElement('button');
@@ -230,7 +233,12 @@ function startScreenshare(driver) {
       }
     })();
   `);
-        console.log('startScreenshare executeScript returned:', response);
+        if (response === 'started') {
+            (0, server_1.broadcastLog)('🎥 Screen recording started successfully!');
+        }
+        else {
+            (0, server_1.broadcastLog)('⚠️ Screen recording response: ' + response);
+        }
         // Don't block forever - just wait a bit
         yield driver.sleep(2000);
     });
@@ -238,11 +246,11 @@ function startScreenshare(driver) {
 function stopRecordingAndLeave() {
     return __awaiter(this, void 0, void 0, function* () {
         if (!activeDriver) {
-            console.log('No active driver to stop');
+            (0, server_1.broadcastLog)('⚠️ No active driver to stop');
             return { success: false, message: 'No active recording' };
         }
         try {
-            console.log('Stopping recording and leaving meeting...');
+            (0, server_1.broadcastLog)('🛑 Stopping recording and leaving meeting...');
             // Stop the recording by executing script in browser
             yield activeDriver.executeScript(`
       try {
@@ -265,10 +273,11 @@ function stopRecordingAndLeave() {
             // Clean up
             yield activeDriver.quit();
             activeDriver = null;
+            (0, server_1.broadcastLog)('🔒 Chrome browser closed');
             return { success: true, message: 'Recording stopped and left meeting' };
         }
         catch (error) {
-            console.error('Error stopping recording:', error);
+            (0, server_1.broadcastLog)('❌ Error stopping recording: ' + error);
             if (activeDriver) {
                 try {
                     yield activeDriver.quit();
@@ -284,30 +293,29 @@ function stopRecordingAndLeave() {
 }
 function main(meetUrl) {
     return __awaiter(this, void 0, void 0, function* () {
-        console.log('🤖 Main function called with URL:', meetUrl);
+        (0, server_1.broadcastLog)('🤖 Bot main function started');
         try {
-            console.log('Creating Chrome driver...');
             const driver = yield getDriver();
             activeDriver = driver; // Store globally
-            console.log('✅ Chrome driver created successfully');
             //joining meet
-            console.log('Opening Meet URL...');
+            (0, server_1.broadcastLog)('🌐 Opening Meet URL...');
             yield openMeet(driver, meetUrl);
+            (0, server_1.broadcastLog)('⏰ Waiting 20 seconds for host approval...');
             yield new Promise((x) => setTimeout(x, 20000));
             //wait until the admin approves the bot to join
             //starting screensharing
             yield startScreenshare(driver);
         }
         catch (error) {
-            console.error('❌ Error in main function:', error);
+            (0, server_1.broadcastLog)('❌ Error in main function: ' + error);
             activeDriver = null;
         }
     });
 }
 // Register the bot functions with the server
-const server_1 = require("./server");
-server_1.botController.startBot = main;
-server_1.botController.stopBot = stopRecordingAndLeave;
+const server_2 = require("./server");
+server_2.botController.startBot = main;
+server_2.botController.stopBot = stopRecordingAndLeave;
 console.log('✅ Bot ready to receive commands from frontend');
 // screen recording code checked in console
 // window.navigator.mediaDevices.getDisplayMedia().then(stream=>{

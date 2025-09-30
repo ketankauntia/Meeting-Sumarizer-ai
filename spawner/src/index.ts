@@ -2,6 +2,7 @@ import { Builder, Browser, By, Key, until, WebDriver } from 'selenium-webdriver'
 import { Options } from 'selenium-webdriver/chrome';
 
 import './server'; // Just run the server
+import { broadcastLog } from './server';
 
 // Store active driver globally
 let activeDriver: WebDriver | null = null;
@@ -10,17 +11,18 @@ async function openMeet(driver: WebDriver, meetUrl: string) {
   try {
     await driver.get(meetUrl);
 
-    console.log('google link entered');
-    console.log('driver sleep entered');
+    broadcastLog('🌐 Google Meet is loaded...');
+    // broadcastLog('⏳ Waiting for page elements to load (10s)...');
     // waiting for the elements of the page to load
     await driver.sleep(10000);
 
-    console.log('driver sleep done');
+    broadcastLog('✅ Google Meet is loaded successfully ...');
 
     const popupButton = await driver.wait(
       until.elementLocated(By.xpath("//span[contains(text(),'Got it')]"))
     );
     popupButton.click();
+    // broadcastLog('👆 Clicked "Got it" button');
 
     // const nameInput = await driver.wait(until.elementLocated(By.id("c11")), 10000);
     const nameInput = await driver.wait(
@@ -30,6 +32,7 @@ async function openMeet(driver: WebDriver, meetUrl: string) {
     await nameInput.clear();
     await nameInput.click();
     await nameInput.sendKeys('value', 'Meeting Rec Bot');
+    broadcastLog('👤 Entering bot name ...');
     await driver.sleep(2000);
     // await driver.wait(until.elementLocated(By.id('c12314')), 10000);
 
@@ -39,7 +42,7 @@ async function openMeet(driver: WebDriver, meetUrl: string) {
 
     await buttonElement.click();
 
-    console.log('############ Request to join meeting sent!! ###########');
+    broadcastLog('📞 Request to join meeting sent!');
     // await driver.wait(until.elementLocated(By.id('c12314')), 900000);
   } finally {
     // await driver.quit();
@@ -47,7 +50,7 @@ async function openMeet(driver: WebDriver, meetUrl: string) {
 }
 
 async function getDriver() {
-  console.log('📝 Setting up Chrome options...');
+  broadcastLog('📝 Starting Chrome...');
   
   const chrome = require('selenium-webdriver/chrome');
   const service = new chrome.ServiceBuilder(require('chromedriver').path);
@@ -61,20 +64,20 @@ async function getDriver() {
   chromeOptions.addArguments('--disable-dev-shm-usage');
   chromeOptions.addArguments('--disable-gpu');
   
-  console.log('🚀 Building WebDriver with explicit ChromeDriver path...');
+  // broadcastLog('🚗 Building Chrome WebDriver...');
   let driver = await new Builder()
     .forBrowser(Browser.CHROME)
     .setChromeOptions(chromeOptions)
     .setChromeService(service)
     .build();
 
-  console.log('✅ WebDriver built successfully!');
+  broadcastLog('✅ Chrome ready!');
   return driver;
 }
 
 async function leaveMeeting(driver: WebDriver) {
   try {
-    console.log('Attempting to leave meeting...');
+    broadcastLog('👋 Attempting to leave meeting...');
     
     // Click the "Leave call" button using the aria-label
     const leaveButton = await driver.wait(
@@ -83,25 +86,25 @@ async function leaveMeeting(driver: WebDriver) {
     );
     await leaveButton.click();
     
-    console.log('✅ Left the meeting successfully');
+    broadcastLog('✅ Left the meeting successfully');
     
     // Wait a bit for cleanup
     await driver.sleep(2000);
   } catch (error) {
-    console.error('Error leaving meeting:', error);
+    broadcastLog('⚠️ Error leaving meeting: ' + error);
     // If button not found, try alternative selector
     try {
       const altButton = await driver.findElement(By.css("button[aria-label='Leave call']"));
       await altButton.click();
-      console.log('✅ Left meeting using alternative selector');
+      broadcastLog('✅ Left meeting using alternative selector');
     } catch (e) {
-      console.error('Could not find leave button with any selector');
+      broadcastLog('❌ Could not find leave button');
     }
   }
 }
 
 async function startScreenshare(driver: WebDriver) {
-  console.log('startScreenshare called');
+  broadcastLog('🎬 Initializing screen recording...');
   
   // Create a button and click it to generate user gesture
   await driver.executeScript(`
@@ -243,7 +246,12 @@ async function startScreenshare(driver: WebDriver) {
       }
     })();
   `);
-  console.log('startScreenshare executeScript returned:', response);
+  
+  if (response === 'started') {
+    broadcastLog('🎥 Screen recording started successfully!');
+  } else {
+    broadcastLog('⚠️ Screen recording response: ' + response);
+  }
 
   // Don't block forever - just wait a bit
   await driver.sleep(2000);
@@ -251,12 +259,12 @@ async function startScreenshare(driver: WebDriver) {
 
 async function stopRecordingAndLeave() {
   if (!activeDriver) {
-    console.log('No active driver to stop');
+    broadcastLog('⚠️ No active driver to stop');
     return { success: false, message: 'No active recording' };
   }
 
   try {
-    console.log('Stopping recording and leaving meeting...');
+    broadcastLog('🛑 Stopping recording and leaving meeting...');
     
     // Stop the recording by executing script in browser
     await activeDriver.executeScript(`
@@ -283,10 +291,11 @@ async function stopRecordingAndLeave() {
     // Clean up
     await activeDriver.quit();
     activeDriver = null;
+    broadcastLog('🔒 Chrome browser closed');
 
     return { success: true, message: 'Recording stopped and left meeting' };
   } catch (error) {
-    console.error('Error stopping recording:', error);
+    broadcastLog('❌ Error stopping recording: ' + error);
     if (activeDriver) {
       try {
         await activeDriver.quit();
@@ -300,25 +309,24 @@ async function stopRecordingAndLeave() {
 }
 
 async function main(meetUrl: string) {
-  console.log('🤖 Main function called with URL:', meetUrl);
+  // broadcastLog('🤖 Bot main function started');
   
   try {
-    console.log('Creating Chrome driver...');
     const driver = await getDriver();
     activeDriver = driver; // Store globally
-    console.log('✅ Chrome driver created successfully');
 
     //joining meet
-    console.log('Opening Meet URL...');
+    broadcastLog('🌐 Opening Google Meet...');
     await openMeet(driver, meetUrl);
 
+    broadcastLog('⏰ Waiting 20 seconds for host approval...');
     await new Promise((x) => setTimeout(x, 20000));
     //wait until the admin approves the bot to join
 
     //starting screensharing
     await startScreenshare(driver);
   } catch (error) {
-    console.error('❌ Error in main function:', error);
+    broadcastLog('❌ Error in main function: ' + error);
     activeDriver = null;
   }
 }

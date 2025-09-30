@@ -6,6 +6,20 @@ import path from 'path';
 // Store the Meet URL that frontend will send
 export let currentMeetUrl = '';
 
+// Store connected SSE clients for log broadcasting
+const logClients: http.ServerResponse[] = [];
+
+// Function to broadcast logs to all connected clients
+export function broadcastLog(message: string) {
+  const timestamp = new Date().toLocaleTimeString();
+  const logMessage = `[${timestamp}] ${message}`;
+  console.log(logMessage); // Also log to console
+  
+  logClients.forEach(client => {
+    client.write(`data: ${JSON.stringify({ log: logMessage })}\n\n`);
+  });
+}
+
 // This will be set from index.ts - using object to make it mutable
 export const botController = {
   startBot: null as ((url: string) => void) | null,
@@ -25,24 +39,54 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // GET /logs - SSE endpoint for real-time logs
+  if (req.url === '/logs' && req.method === 'GET') {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*'
+    });
+    
+    // Send initial connection message
+    res.write(`data: ${JSON.stringify({ log: '[SSE] Connected to log stream' })}\n\n`);
+    
+    logClients.push(res);
+    console.log('✅ SSE client connected. Total clients:', logClients.length);
+    
+    // Keep connection alive with periodic pings
+    const keepAliveInterval = setInterval(() => {
+      res.write(`: keepalive\n\n`);
+    }, 15000);
+    
+    req.on('close', () => {
+      clearInterval(keepAliveInterval);
+      const index = logClients.indexOf(res);
+      if (index > -1) {
+        logClients.splice(index, 1);
+      }
+      console.log('SSE client disconnected. Remaining clients:', logClients.length);
+    });
+    
+    return; // Don't fall through to 404
+  }
+  
   // POST /start - Receive Meet URL and start bot
-  if (req.url === '/start' && req.method === 'POST') {
+  else if (req.url === '/start' && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', async () => {
       const { meetUrl } = JSON.parse(body);
       currentMeetUrl = meetUrl;
-      console.log('Received Meet URL:', meetUrl);
+      broadcastLog('📥 Received Meet URL: ' + meetUrl);
       
-      // Call the bot start function
-      console.log('botController.startBot is:', botController.startBot);
       if (botController.startBot) {
-        console.log('Calling bot start function...');
+        broadcastLog('🚀 Starting bot...');
         botController.startBot(meetUrl);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true, message: 'Bot starting...' }));
       } else {
-        console.log('!!!! Bot not ready!');
+        broadcastLog('❌ Bot not ready!');
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: false, message: 'Bot not ready' }));
       }
@@ -56,8 +100,15 @@ const server = http.createServer((req, res) => {
         if (botController.stopBot) {
           console.log('Calling stop bot function...');
           const result = await botController.stopBot();
+          
+          // Include recording details in response
+          const response = {
+            ...result,
+            ...lastRecordingDetails
+          };
+          
           res.writeHead(result.success ? 200 : 500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(result));
+          res.end(JSON.stringify(response));
         } else {
           res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: false, message: 'Stop function not available' }));
@@ -85,9 +136,10 @@ const wss = new WebSocket.Server({ port: 8080 });
 // Storage for video chunks
 const videoChunks: Buffer[] = [];
 let recordingStartTime: number | null = null;
+let lastRecordingDetails: {filename: string; size: string; duration: string} | null = null;
 
 wss.on('connection', (ws) => {
-  console.log('🎥 Client connected - Recording started');
+  broadcastLog('🎥 Client connected - Recording started');
   recordingStartTime = Date.now();
   videoChunks.length = 0; // Clear previous chunks
 
@@ -95,11 +147,11 @@ wss.on('connection', (ws) => {
     // Store the chunk
     videoChunks.push(data as Buffer);
     const totalSize = videoChunks.reduce((sum, chunk) => sum + chunk.length, 0);
-    console.log(`######### Chunk ${videoChunks.length} received | Total: ${(totalSize / 1024 / 1024).toFixed(2)} MB`);
+    broadcastLog(`######### Chunk ${videoChunks.length} received | Total: ${(totalSize / 1024 / 1024).toFixed(2)} MB`);
   });
 
   ws.on('close', () => {
-    console.log('Client disconnected - Saving video...');
+    broadcastLog('Client disconnected - Saving video...');
     
     if (videoChunks.length > 0) {
       // Create recordings directory if it doesn't exist
@@ -118,15 +170,24 @@ wss.on('connection', (ws) => {
       fs.writeFileSync(filepath, videoBuffer);
       
       const duration = recordingStartTime ? ((Date.now() - recordingStartTime) / 1000).toFixed(1) : 'unknown';
-      console.log(`Video saved: ${filename}`);
-      console.log(`Size: ${(videoBuffer.length / 1024 / 1024).toFixed(2)} MB`);
-      console.log(`Duration: ~${duration}s`);
+      const sizeInMB = (videoBuffer.length / 1024 / 1024).toFixed(2);
+      
+      broadcastLog(`Video saved: ${filename}`);
+      broadcastLog(`Size: ${sizeInMB} MB`);
+      broadcastLog(`Duration: ~${duration}s`);
+      
+      // Store details for frontend
+      lastRecordingDetails = {
+        filename: filename,
+        size: `${sizeInMB} MB`,
+        duration: `${duration}s`
+      };
       
       // Clear chunks
       videoChunks.length = 0;
       recordingStartTime = null;
     } else {
-      console.log('!!!! No video chunks to save');
+      broadcastLog('!!!! No video chunks to save');
     }
   });
 });
