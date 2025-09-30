@@ -5,6 +5,7 @@ import { useState } from 'react';
 export default function Home() {
   const [meetUrl, setMeetUrl] = useState('');
   const [status, setStatus] = useState('idle'); // idle, recording, stopped
+  const [error, setError] = useState('');
 
   const handleStart = async () => {
     if (!meetUrl.trim()) {
@@ -51,7 +52,7 @@ export default function Home() {
         setError(data.message || 'Failed to stop recording');
         setStatus('idle');
       }
-    } catch (err) {
+    } catch {
       setError('Failed to stop recording. Check backend logs.');
       setStatus('idle');
     }
@@ -78,6 +79,13 @@ export default function Home() {
             className="w-full text-black outline-none px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-black focus:border-black disabled:bg-gray-100"
           />
         </div>
+
+        {/* Error Message */}
+        {error && (
+          <div className="mb-4 p-3 bg-red-100 text-black rounded-md text-center">
+            {error}
+          </div>
+        )}
 
         {/* Status */}
         {status !== 'idle' && (

@@ -51,20 +51,22 @@ const server = http.createServer((req, res) => {
   
   // POST /stop - Stop recording and leave meeting
   else if (req.url === '/stop' && req.method === 'POST') {
-    try {
-      if (botController.stopBot) {
-        console.log('Calling stop bot function...');
-        const result = await botController.stopBot();
-        res.writeHead(result.success ? 200 : 500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(result));
-      } else {
+    (async () => {
+      try {
+        if (botController.stopBot) {
+          console.log('Calling stop bot function...');
+          const result = await botController.stopBot();
+          res.writeHead(result.success ? 200 : 500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(result));
+        } else {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, message: 'Stop function not available' }));
+        }
+      } catch (error) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: false, message: 'Stop function not available' }));
+        res.end(JSON.stringify({ success: false, message: 'Failed to stop recording' }));
       }
-    } catch (error) {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: false, message: 'Failed to stop recording' }));
-    }
+    })();
   }
   
   else {
