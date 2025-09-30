@@ -6,14 +6,29 @@ export default function Home() {
   const [meetUrl, setMeetUrl] = useState('');
   const [status, setStatus] = useState('idle'); // idle, recording, stopped
 
-  const handleStart = () => {
+  const handleStart = async () => {
     if (!meetUrl.trim()) {
       alert('Please enter a Google Meet URL');
       return;
     }
+    
     setStatus('recording');
-    console.log('Starting recording for:', meetUrl);
-    // TODO: Connect to backend
+    
+    try {
+      // Send URL to backend
+      const response = await fetch('http://localhost:3001/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ meetUrl })
+      });
+      
+      const data = await response.json();
+      console.log('Backend response:', data);
+    } catch (error) {
+      console.error('Error connecting to backend:', error);
+      alert('Failed to connect to backend. Make sure backend is running.');
+      setStatus('idle');
+    }
   };
 
   const handleStop = () => {
