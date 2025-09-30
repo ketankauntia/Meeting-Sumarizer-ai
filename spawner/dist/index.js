@@ -19,20 +19,20 @@ function openMeet(driver, meetUrl) {
     return __awaiter(this, void 0, void 0, function* () {
         try {
             yield driver.get(meetUrl);
-            (0, server_1.broadcastLog)('🌐 Google Meet page loaded');
-            (0, server_1.broadcastLog)('⏳ Waiting for page elements to load (10s)...');
+            (0, server_1.broadcastLog)('🌐 Google Meet is loaded...');
+            // broadcastLog('⏳ Waiting for page elements to load (10s)...');
             // waiting for the elements of the page to load
             yield driver.sleep(10000);
-            (0, server_1.broadcastLog)('✅ Page elements loaded');
+            (0, server_1.broadcastLog)('✅ Google Meet is loaded successfully ...');
             const popupButton = yield driver.wait(selenium_webdriver_1.until.elementLocated(selenium_webdriver_1.By.xpath("//span[contains(text(),'Got it')]")));
             popupButton.click();
-            (0, server_1.broadcastLog)('👆 Clicked "Got it" button');
+            // broadcastLog('👆 Clicked "Got it" button');
             // const nameInput = await driver.wait(until.elementLocated(By.id("c11")), 10000);
             const nameInput = yield driver.wait(selenium_webdriver_1.until.elementLocated(selenium_webdriver_1.By.xpath('//input[@placeholder="Your name"]')), 10000);
             yield nameInput.clear();
             yield nameInput.click();
             yield nameInput.sendKeys('value', 'Meeting Rec Bot');
-            (0, server_1.broadcastLog)('👤 Entered bot name: "Meeting Rec Bot"');
+            (0, server_1.broadcastLog)('👤 Entering bot name ...');
             yield driver.sleep(2000);
             // await driver.wait(until.elementLocated(By.id('c12314')), 10000);
             const buttonElement = yield driver.wait(selenium_webdriver_1.until.elementLocated(selenium_webdriver_1.By.xpath("//span[contains(text(),'Ask to join')]")));
@@ -47,7 +47,7 @@ function openMeet(driver, meetUrl) {
 }
 function getDriver() {
     return __awaiter(this, void 0, void 0, function* () {
-        (0, server_1.broadcastLog)('📝 Setting up Chrome options...');
+        (0, server_1.broadcastLog)('📝 Starting Chrome...');
         const chrome = require('selenium-webdriver/chrome');
         const service = new chrome.ServiceBuilder(require('chromedriver').path);
         const chromeOptions = new chrome_1.Options();
@@ -58,13 +58,13 @@ function getDriver() {
         chromeOptions.addArguments('--no-sandbox');
         chromeOptions.addArguments('--disable-dev-shm-usage');
         chromeOptions.addArguments('--disable-gpu');
-        (0, server_1.broadcastLog)('🚗 Building Chrome WebDriver...');
+        // broadcastLog('🚗 Building Chrome WebDriver...');
         let driver = yield new selenium_webdriver_1.Builder()
             .forBrowser(selenium_webdriver_1.Browser.CHROME)
             .setChromeOptions(chromeOptions)
             .setChromeService(service)
             .build();
-        (0, server_1.broadcastLog)('✅ Chrome WebDriver ready!');
+        (0, server_1.broadcastLog)('✅ Chrome ready!');
         return driver;
     });
 }
@@ -293,12 +293,12 @@ function stopRecordingAndLeave() {
 }
 function main(meetUrl) {
     return __awaiter(this, void 0, void 0, function* () {
-        (0, server_1.broadcastLog)('🤖 Bot main function started');
+        // broadcastLog('🤖 Bot main function started');
         try {
             const driver = yield getDriver();
             activeDriver = driver; // Store globally
             //joining meet
-            (0, server_1.broadcastLog)('🌐 Opening Meet URL...');
+            (0, server_1.broadcastLog)('🌐 Opening Google Meet...');
             yield openMeet(driver, meetUrl);
             (0, server_1.broadcastLog)('⏰ Waiting 20 seconds for host approval...');
             yield new Promise((x) => setTimeout(x, 20000));

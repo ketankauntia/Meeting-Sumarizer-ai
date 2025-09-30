@@ -18,28 +18,47 @@ export default function Home() {
 
   // Connect to SSE log stream on mount
   useEffect(() => {
-    console.log('🔌 Connecting to SSE log stream...');
-    const eventSource = new EventSource('http://localhost:3001/logs');
-    eventSourceRef.current = eventSource;
-    
-    eventSource.onopen = () => {
-      console.log('✅ SSE connection opened');
+    let eventSource: EventSource | null = null;
+    let reconnectTimeout: NodeJS.Timeout;
+
+    const connect = () => {
+      try {
+        console.log('🔌 Connecting to SSE log stream...');
+        eventSource = new EventSource('http://localhost:3001/logs');
+        eventSourceRef.current = eventSource;
+        
+        eventSource.onopen = () => {
+          console.log('✅ SSE connection opened');
+        };
+        
+        eventSource.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            setLogs(prev => [...prev, data.log]);
+          } catch (e) {
+            console.error('Failed to parse SSE message:', e);
+          }
+        };
+        
+        eventSource.onerror = () => {
+          if (eventSource?.readyState === EventSource.CLOSED) {
+            console.log('SSE connection closed, will retry in 5s...');
+            reconnectTimeout = setTimeout(connect, 5000);
+          }
+        };
+      } catch (error) {
+        console.error('Failed to create EventSource:', error);
+        reconnectTimeout = setTimeout(connect, 5000);
+      }
     };
-    
-    eventSource.onmessage = (event) => {
-      console.log('📨 Received SSE message:', event.data);
-      const data = JSON.parse(event.data);
-      setLogs(prev => [...prev, data.log]);
-    };
-    
-    eventSource.onerror = (error) => {
-      console.error('❌ SSE Error:', error);
-      console.error('EventSource readyState:', eventSource.readyState);
-    };
+
+    connect();
     
     return () => {
-      console.log('🔌 Closing SSE connection');
-      eventSource.close();
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (eventSource) {
+        eventSource.close();
+      }
     };
   }, []);
 
@@ -106,100 +125,160 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-gray-50 p-8">
-      <h1 className="text-3xl text-black font-bold text-center mb-8">
-        Meeting Recorder
-      </h1>
+    <main className="min-h-screen bg-black p-8">
+      {/* Header */}
+      <div className="max-w-7xl mx-auto mb-10">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-4xl text-white font-bold mb-2">
+              Meeting Recorder
+            </h1>
+            <p className="text-gray-500 text-sm">Automated Google Meet recording bot</p>
+          </div>
+          {status === 'recording' && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-red-500/10 border border-red-500/50 rounded-lg">
+              <span className="relative flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+              </span>
+              <span className="text-red-400 font-medium text-sm">Recording Live</span>
+            </div>
+          )}
+        </div>
+      </div>
 
-      <div className="max-w-7xl mx-auto flex gap-6">
+      <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Side - Recording Controls */}
-        <div className="bg-white p-6 rounded-lg shadow-lg w-96 h-fit">
-          <h2 className="text-xl text-black font-semibold mb-4">Recording Controls</h2>
+        <div className="lg:col-span-1 space-y-6">
+          {/* URL Input Card */}
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 shadow-2xl">
+            <h2 className="text-lg text-white font-semibold mb-4">Meeting Setup</h2>
 
-          {/* URL Input */}
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Google Meet URL
-            </label>
-            <input
-              type="text"
-              value={meetUrl}
-              onChange={(e) => setMeetUrl(e.target.value)}
-              placeholder="https://meet.google.com/xxx-xxxx-xxx"
-              disabled={status === 'recording'}
-              className="w-full text-black outline-none px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-black focus:border-black disabled:bg-gray-100"
-            />
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-400 mb-2">
+                  Google Meet URL
+                </label>
+                <input
+                  type="text"
+                  value={meetUrl}
+                  onChange={(e) => setMeetUrl(e.target.value)}
+                  placeholder="https://meet.google.com/xxx-xxxx-xxx"
+                  disabled={status === 'recording'}
+                  className="w-full bg-black text-white px-4 py-3 border border-zinc-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-white disabled:opacity-50 disabled:cursor-not-allowed outline-none transition placeholder:text-gray-600 focus:border-1"
+                />
+              </div>
+
+              {/* Error Message */}
+              {error && (
+                <div className="p-3 bg-red-500/10 border border-red-500/50 rounded-lg">
+                  <div className="flex justify-center items-center gap-2">
+                    <span className="text-red-400 text-lg">⚠️</span>
+                    <p className="text-red-400 text-sm">{error}</p>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Error Message */}
-          {error && (
-            <div className="mb-4 p-3 bg-red-100 text-red-800 rounded-md text-sm">
-              {error}
+          {/* Control Buttons Card */}
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 shadow-2xl">
+            <h2 className="text-lg text-white font-semibold mb-4">Controls</h2>
+
+            <div className="space-y-3">
+              <button
+                onClick={handleStart}
+                disabled={status === 'recording'}
+                className="w-full bg-white hover:bg-gray-200 text-black py-3.5 px-4 rounded-lg font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
+              >
+                <span className="flex items-center justify-center gap-2">
+                  <span>▶️</span>
+                  Start Recording
+                </span>
+              </button>
+
+              <button
+                onClick={handleStop}
+                disabled={status !== 'recording'}
+                className="w-full bg-black border-gray-200 text-white py-3.5 px-4 rounded-lg font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed border-1 hover:border-solid"
+              >
+                <span className="flex items-center justify-center gap-2">
+                  <span>⏹️</span>
+                  Stop Recording
+                </span>
+              </button>
             </div>
-          )}
-
-          {/* Status */}
-          {status !== 'idle' && (
-            <div className={`mb-4 p-3 rounded-md text-center font-semibold ${
-              status === 'recording' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
-            }`}>
-              {status === 'recording' ? '🎥 Recording Active' : '✅ Recording Complete'}
-            </div>
-          )}
-
-          {/* Buttons */}
-          <div className="space-y-3">
-            <button
-              onClick={handleStart}
-              disabled={status === 'recording'}
-              className="w-full bg-black text-white py-3 px-4 rounded-md hover:bg-gray-800 disabled:bg-gray-400 disabled:cursor-not-allowed font-semibold transition"
-            >
-              Start Recording
-            </button>
-
-            <button
-              onClick={handleStop}
-              disabled={status !== 'recording'}
-              className="w-full bg-red-600 text-white py-3 px-4 rounded-md hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-semibold transition"
-            >
-              Stop Recording
-            </button>
           </div>
 
-          {/* Recording Details */}
+          {/* Recording Details Card */}
           {recordingDetails && (
-            <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-md">
-              <h3 className="font-semibold text-green-800 mb-2">📁 Recording Saved!</h3>
-              <div className="text-sm text-gray-700 space-y-1">
-                <p><span className="font-medium">File:</span> {recordingDetails.filename}</p>
-                <p><span className="font-medium">Size:</span> {recordingDetails.size}</p>
-                <p><span className="font-medium">Duration:</span> {recordingDetails.duration}</p>
-                <p className="text-xs text-gray-500 mt-2">Location: spawner/recordings/</p>
+            <div className="bg-zinc-900 border border-green-500/50 rounded-xl p-6 shadow-2xl">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-2xl">✅</span>
+                <h3 className="text-lg font-semibold text-green-400">Recording Saved!</h3>
+              </div>
+              <div className="space-y-2.5 text-sm">
+                <div className="flex justify-between items-center p-2 bg-black rounded-lg">
+                  <span className="text-gray-400">Filename</span>
+                  <span className="text-white font-mono text-xs">{recordingDetails.filename}</span>
+                </div>
+                <div className="flex justify-between items-center p-2 bg-black rounded-lg">
+                  <span className="text-gray-400">Size</span>
+                  <span className="text-white font-semibold">{recordingDetails.size}</span>
+                </div>
+                <div className="flex justify-between items-center p-2 bg-black rounded-lg">
+                  <span className="text-gray-400">Duration</span>
+                  <span className="text-white font-semibold">{recordingDetails.duration}</span>
+                </div>
+                <div className="mt-3 pt-3 border-t border-zinc-800">
+                  <p className="text-xs text-gray-500">
+                    📁 Location: <span className="text-gray-400 font-mono">spawner/recordings/</span>
+                  </p>
+                </div>
               </div>
             </div>
           )}
         </div>
 
-        {/* Right Side - Logs */}
-        <div className="flex-1 bg-white rounded-lg shadow-lg overflow-hidden flex flex-col" style={{ height: '600px' }}>
-          <div className="bg-gray-800 text-white px-6 py-3 font-semibold">
-            📋 Activity Logs
-          </div>
-          <div className="flex-1 overflow-y-auto p-6 bg-gray-900 font-mono text-sm">
-            {logs.length === 0 ? (
-              <div className="text-gray-500 text-center mt-10">
-                No activity yet. Start recording to see logs...
+        {/* Right Side - Activity Logs */}
+        <div className="lg:col-span-2">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden" style={{ height: '700px' }}>
+            <div className="bg-black border-b border-zinc-800 px-6 py-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg text-white font-semibold">Activity Logs</h2>
+                  <p className="text-xs text-gray-500">Real-time bot activity stream</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                  <span className="text-xs text-gray-500">Live</span>
+                </div>
               </div>
-            ) : (
-              <div className="space-y-2">
-                {logs.map((log, index) => (
-                  <div key={index} className="text-green-400">
-                    {log}
+            </div>
+            
+            <div className="h-[calc(100%-72px)] overflow-y-auto p-6 bg-black font-mono text-sm">
+              {logs.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-gray-600">
+                  <div className="w-16 h-16 bg-zinc-900 rounded-full flex items-center justify-center mb-4">
+                    <span className="text-3xl">💤</span>
                   </div>
-                ))}
-                <div ref={logsEndRef} />
-              </div>
-            )}
+                  <p className="text-center">No activity yet</p>
+                  <p className="text-xs text-gray-700 mt-2">Start recording to see real-time logs...</p>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {logs.map((log, index) => (
+                    <div 
+                      key={index} 
+                      className="text-gray-300 hover:bg-zinc-900/50 px-2 py-1 rounded transition-colors duration-150"
+                    >
+                      {log}
+                    </div>
+                  ))}
+                  <div ref={logsEndRef} />
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
