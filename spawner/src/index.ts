@@ -1,6 +1,5 @@
 import { Builder, Browser, By, Key, until, WebDriver } from 'selenium-webdriver';
-import { Options, ServiceBuilder } from 'selenium-webdriver/chrome';
-import path from 'path';
+import { Options } from 'selenium-webdriver/chrome';
 
 import './server'; // Just run the server
 
@@ -46,6 +45,10 @@ async function openMeet(driver: WebDriver, meetUrl: string) {
 
 async function getDriver() {
   console.log('📝 Setting up Chrome options...');
+  
+  const chrome = require('selenium-webdriver/chrome');
+  const service = new chrome.ServiceBuilder(require('chromedriver').path);
+  
   const chromeOptions = new Options();
   chromeOptions.addArguments('--disable-blink-features=AutomationControlled');
   chromeOptions.addArguments('--use-fake-ui-for-media-stream');
@@ -53,15 +56,9 @@ async function getDriver() {
   chromeOptions.addArguments('--enable-usermedia-screen-capturing');
   chromeOptions.addArguments('--no-sandbox');
   chromeOptions.addArguments('--disable-dev-shm-usage');
+  chromeOptions.addArguments('--disable-gpu');
   
   console.log('🚀 Building WebDriver with explicit ChromeDriver path...');
-  
-  // Use the locally installed chromedriver
-  const chromedriverPath = path.join(__dirname, '../node_modules/chromedriver/lib/chromedriver/chromedriver.exe');
-  console.log('ChromeDriver path:', chromedriverPath);
-  
-  const service = new ServiceBuilder(chromedriverPath);
-  
   let driver = await new Builder()
     .forBrowser(Browser.CHROME)
     .setChromeOptions(chromeOptions)

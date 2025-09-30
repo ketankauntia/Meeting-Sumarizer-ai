@@ -8,13 +8,9 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 const selenium_webdriver_1 = require("selenium-webdriver");
 const chrome_1 = require("selenium-webdriver/chrome");
-const path_1 = __importDefault(require("path"));
 require("./server"); // Just run the server
 function openMeet(driver, meetUrl) {
     return __awaiter(this, void 0, void 0, function* () {
@@ -47,6 +43,8 @@ function openMeet(driver, meetUrl) {
 function getDriver() {
     return __awaiter(this, void 0, void 0, function* () {
         console.log('📝 Setting up Chrome options...');
+        const chrome = require('selenium-webdriver/chrome');
+        const service = new chrome.ServiceBuilder(require('chromedriver').path);
         const chromeOptions = new chrome_1.Options();
         chromeOptions.addArguments('--disable-blink-features=AutomationControlled');
         chromeOptions.addArguments('--use-fake-ui-for-media-stream');
@@ -54,11 +52,8 @@ function getDriver() {
         chromeOptions.addArguments('--enable-usermedia-screen-capturing');
         chromeOptions.addArguments('--no-sandbox');
         chromeOptions.addArguments('--disable-dev-shm-usage');
+        chromeOptions.addArguments('--disable-gpu');
         console.log('🚀 Building WebDriver with explicit ChromeDriver path...');
-        // Use the locally installed chromedriver
-        const chromedriverPath = path_1.default.join(__dirname, '../node_modules/chromedriver/lib/chromedriver/chromedriver.exe');
-        console.log('ChromeDriver path:', chromedriverPath);
-        const service = new chrome_1.ServiceBuilder(chromedriverPath);
         let driver = yield new selenium_webdriver_1.Builder()
             .forBrowser(selenium_webdriver_1.Browser.CHROME)
             .setChromeOptions(chromeOptions)
