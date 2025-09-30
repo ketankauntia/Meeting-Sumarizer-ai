@@ -1,12 +1,15 @@
 import WebSocket from 'ws';
 import http from 'http';
+import fs from 'fs';
+import path from 'path';
 
 // Store the Meet URL that frontend will send
 export let currentMeetUrl = '';
 
 // This will be set from index.ts - using object to make it mutable
 export const botController = {
-  startBot: null as ((url: string) => void) | null
+  startBot: null as ((url: string) => void) | null,
+  stopBot: null as (() => Promise<{ success: boolean; message: string }>) | null
 };
 
 // Create HTTP server for API
@@ -34,17 +37,37 @@ const server = http.createServer((req, res) => {
       // Call the bot start function
       console.log('botController.startBot is:', botController.startBot);
       if (botController.startBot) {
-        console.log('🚀 Calling bot start function...');
+        console.log('Calling bot start function...');
         botController.startBot(meetUrl);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true, message: 'Bot starting...' }));
       } else {
-        console.log('❌ Bot not ready!');
+        console.log('!!!! Bot not ready!');
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: false, message: 'Bot not ready' }));
       }
     });
-  } else {
+  } 
+  
+  // POST /stop - Stop recording and leave meeting
+  else if (req.url === '/stop' && req.method === 'POST') {
+    try {
+      if (botController.stopBot) {
+        console.log('Calling stop bot function...');
+        const result = await botController.stopBot();
+        res.writeHead(result.success ? 200 : 500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(result));
+      } else {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, message: 'Stop function not available' }));
+      }
+    } catch (error) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, message: 'Failed to stop recording' }));
+    }
+  }
+  
+  else {
     res.writeHead(404);
     res.end('Not found');
   }
@@ -57,19 +80,51 @@ server.listen(3001, () => {
 // WebSocket server for video streaming
 const wss = new WebSocket.Server({ port: 8080 });
 
+// Storage for video chunks
+const videoChunks: Buffer[] = [];
+let recordingStartTime: number | null = null;
+
 wss.on('connection', (ws) => {
-  console.log('Client connected');
+  console.log('🎥 Client connected - Recording started');
+  recordingStartTime = Date.now();
+  videoChunks.length = 0; // Clear previous chunks
 
   ws.on('message', (data) => {
-    console.log('Received data: ', data);
-    wss.clients.forEach((client) => {
-      if (client !== ws && client.readyState === WebSocket.OPEN) {
-        client.send(data);
-      }
-    });
+    // Store the chunk
+    videoChunks.push(data as Buffer);
+    const totalSize = videoChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    console.log(`######### Chunk ${videoChunks.length} received | Total: ${(totalSize / 1024 / 1024).toFixed(2)} MB`);
   });
 
   ws.on('close', () => {
-    console.log('Client disconnected');
+    console.log('Client disconnected - Saving video...');
+    
+    if (videoChunks.length > 0) {
+      // Create recordings directory if it doesn't exist
+      const recordingsDir = path.join(process.cwd(), 'recordings');
+      if (!fs.existsSync(recordingsDir)) {
+        fs.mkdirSync(recordingsDir, { recursive: true });
+      }
+      
+      // Generate filename with timestamp
+      const timestamp = new Date().toISOString().replace(/:/g, '-').split('.')[0];
+      const filename = `recording-${timestamp}.webm`;
+      const filepath = path.join(recordingsDir, filename);
+      
+      // Combine all chunks into one file
+      const videoBuffer = Buffer.concat(videoChunks);
+      fs.writeFileSync(filepath, videoBuffer);
+      
+      const duration = recordingStartTime ? ((Date.now() - recordingStartTime) / 1000).toFixed(1) : 'unknown';
+      console.log(`Video saved: ${filename}`);
+      console.log(`Size: ${(videoBuffer.length / 1024 / 1024).toFixed(2)} MB`);
+      console.log(`Duration: ~${duration}s`);
+      
+      // Clear chunks
+      videoChunks.length = 0;
+      recordingStartTime = null;
+    } else {
+      console.log('!!!! No video chunks to save');
+    }
   });
 });

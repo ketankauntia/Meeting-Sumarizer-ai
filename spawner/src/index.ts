@@ -3,6 +3,9 @@ import { Options } from 'selenium-webdriver/chrome';
 
 import './server'; // Just run the server
 
+// Store active driver globally
+let activeDriver: WebDriver | null = null;
+
 async function openMeet(driver: WebDriver, meetUrl: string) {
   try {
     await driver.get(meetUrl);
@@ -69,6 +72,34 @@ async function getDriver() {
   return driver;
 }
 
+async function leaveMeeting(driver: WebDriver) {
+  try {
+    console.log('Attempting to leave meeting...');
+    
+    // Click the "Leave call" button using the aria-label
+    const leaveButton = await driver.wait(
+      until.elementLocated(By.xpath("//button[@aria-label='Leave call']")),
+      5000
+    );
+    await leaveButton.click();
+    
+    console.log('✅ Left the meeting successfully');
+    
+    // Wait a bit for cleanup
+    await driver.sleep(2000);
+  } catch (error) {
+    console.error('Error leaving meeting:', error);
+    // If button not found, try alternative selector
+    try {
+      const altButton = await driver.findElement(By.css("button[aria-label='Leave call']"));
+      await altButton.click();
+      console.log('✅ Left meeting using alternative selector');
+    } catch (e) {
+      console.error('Could not find leave button with any selector');
+    }
+  }
+}
+
 async function startScreenshare(driver: WebDriver) {
   console.log('startScreenshare called');
   
@@ -105,8 +136,11 @@ async function startScreenshare(driver: WebDriver) {
       try {
         console.log('[bot] requesting display media...');
         const screenStream = await navigator.mediaDevices.getDisplayMedia({
-          video: true,
-          audio: true
+          video: { 
+            displaySurface: "browser"  // Force browser tab selection
+          },
+          audio: true,
+          preferCurrentTab: true  // Auto-select current tab if possible
         });
 
         console.log('[bot] got display stream, creating audio graph...');
@@ -146,17 +180,8 @@ async function startScreenshare(driver: WebDriver) {
           ...dest.stream.getAudioTracks()
         ]);
 
-        // Create video element for preview
-        const videoElement = document.createElement('video');
-        videoElement.srcObject = combinedStream;
-        videoElement.autoplay = true;
-        videoElement.controls = true;
-        videoElement.style.position = 'fixed';
-        videoElement.style.right = '10px';
-        videoElement.style.bottom = '10px';
-        videoElement.style.width = '320px';
-        videoElement.style.zIndex = '999999';
-        document.body.appendChild(videoElement);
+        // No video preview element - just record silently
+        console.log('[bot] Recording started (no preview)');
 
         // WebSocket connection - wait for open
         const socket = new WebSocket('ws://localhost:8080');
@@ -224,31 +249,84 @@ async function startScreenshare(driver: WebDriver) {
   await driver.sleep(2000);
 }
 
+async function stopRecordingAndLeave() {
+  if (!activeDriver) {
+    console.log('No active driver to stop');
+    return { success: false, message: 'No active recording' };
+  }
+
+  try {
+    console.log('Stopping recording and leaving meeting...');
+    
+    // Stop the recording by executing script in browser
+    await activeDriver.executeScript(`
+      try {
+        if (window.mediaRecorderInstance && window.mediaRecorderInstance.state === 'recording') {
+          window.mediaRecorderInstance.stop();
+          console.log('[bot] Recording stopped by user');
+        }
+        if (window.socketInstance) {
+          window.socketInstance.close();
+          console.log('[bot] WebSocket closed');
+        }
+      } catch (e) {
+        console.error('[bot] Error stopping recording:', e);
+      }
+    `);
+
+    // Wait for socket to close and save
+    await activeDriver.sleep(2000);
+
+    // Leave the meeting
+    await leaveMeeting(activeDriver);
+
+    // Clean up
+    await activeDriver.quit();
+    activeDriver = null;
+
+    return { success: true, message: 'Recording stopped and left meeting' };
+  } catch (error) {
+    console.error('Error stopping recording:', error);
+    if (activeDriver) {
+      try {
+        await activeDriver.quit();
+      } catch (e) {
+        // Ignore quit errors
+      }
+      activeDriver = null;
+    }
+    return { success: false, message: 'Error stopping recording' };
+  }
+}
+
 async function main(meetUrl: string) {
   console.log('🤖 Main function called with URL:', meetUrl);
   
   try {
     console.log('Creating Chrome driver...');
     const driver = await getDriver();
+    activeDriver = driver; // Store globally
     console.log('✅ Chrome driver created successfully');
 
     //joining meet
     console.log('Opening Meet URL...');
     await openMeet(driver, meetUrl);
 
-    await new Promise((x) => setTimeout(x, 60000));
+    await new Promise((x) => setTimeout(x, 20000));
     //wait until the admin approves the bot to join
 
     //starting screensharing
     await startScreenshare(driver);
   } catch (error) {
     console.error('❌ Error in main function:', error);
+    activeDriver = null;
   }
 }
 
-// Register the bot function with the server
+// Register the bot functions with the server
 import { botController } from './server';
 botController.startBot = main;
+botController.stopBot = stopRecordingAndLeave;
 console.log('✅ Bot ready to receive commands from frontend');
 
 // screen recording code checked in console

@@ -96,8 +96,11 @@ function startScreenshare(driver) {
       try {
         console.log('[bot] requesting display media...');
         const screenStream = await navigator.mediaDevices.getDisplayMedia({
-          video: true,
-          audio: true
+          video: { 
+            displaySurface: "browser"  // Force browser tab selection
+          },
+          audio: true,
+          preferCurrentTab: true  // Auto-select current tab if possible
         });
 
         console.log('[bot] got display stream, creating audio graph...');
@@ -137,17 +140,8 @@ function startScreenshare(driver) {
           ...dest.stream.getAudioTracks()
         ]);
 
-        // Create video element for preview
-        const videoElement = document.createElement('video');
-        videoElement.srcObject = combinedStream;
-        videoElement.autoplay = true;
-        videoElement.controls = true;
-        videoElement.style.position = 'fixed';
-        videoElement.style.right = '10px';
-        videoElement.style.bottom = '10px';
-        videoElement.style.width = '320px';
-        videoElement.style.zIndex = '999999';
-        document.body.appendChild(videoElement);
+        // No video preview element - just record silently
+        console.log('[bot] Recording started (no preview)');
 
         // WebSocket connection - wait for open
         const socket = new WebSocket('ws://localhost:8080');
@@ -224,7 +218,7 @@ function main(meetUrl) {
             //joining meet
             console.log('Opening Meet URL...');
             yield openMeet(driver, meetUrl);
-            yield new Promise((x) => setTimeout(x, 60000));
+            yield new Promise((x) => setTimeout(x, 20000));
             //wait until the admin approves the bot to join
             //starting screensharing
             yield startScreenshare(driver);

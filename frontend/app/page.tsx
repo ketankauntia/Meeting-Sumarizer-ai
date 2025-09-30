@@ -31,10 +31,30 @@ export default function Home() {
     }
   };
 
-  const handleStop = () => {
+  const handleStop = async () => {
     setStatus('stopped');
-    console.log('Stopping recording');
-    // TODO: Connect to backend
+    setError('');
+    console.log('Stopping recording and leaving meeting...');
+
+    try {
+      const response = await fetch('http://localhost:3001/stop', {
+        method: 'POST',
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        alert('✅ Recording saved successfully! Bot left the meeting.\n\nCheck: spawner/recordings/ folder');
+        setMeetUrl('');
+        setStatus('idle');
+      } else {
+        setError(data.message || 'Failed to stop recording');
+        setStatus('idle');
+      }
+    } catch (err) {
+      setError('Failed to stop recording. Check backend logs.');
+      setStatus('idle');
+    }
   };
 
   return (
