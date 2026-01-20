@@ -1,4 +1,10 @@
 UI : <img width="1920" height="859" alt="image" src="https://github.com/user-attachments/assets/6c6dbc6e-0e08-4043-b91c-1a8ff4553797" />
+<img width="536" height="390" alt="Meet Summarizer Ai" src="https://github.com/user-attachments/assets/93a143d2-c335-4d77-8fbb-ec118e25c24f" />
+
+```
+note: summary will be shown in a modal. (the below ss is of a random 5-10sec converstaion.)
+```
+<img width="533" height="641" alt="image" src="https://github.com/user-attachments/assets/66b5dfdb-4295-49cf-957a-987c47f6715a" />
 
 
 1. Open 2 terminals and Install all packages 
