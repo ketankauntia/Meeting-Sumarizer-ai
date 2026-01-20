@@ -12,6 +12,14 @@ export let currentMeetUrl = '';
 
 // Store connected SSE clients for log broadcasting
 const logClients: http.ServerResponse[] = [];
+const captionClients: http.ServerResponse[] = [];
+
+// Function to broadcast captions to all connected caption clients
+export function broadcastCaption(caption: { timestamp: string; speaker: string; text: string }) {
+  captionClients.forEach(client => {
+    client.write(`data: ${JSON.stringify({ type: 'caption', ...caption })}\n\n`);
+  });
+}
 
 // Function to broadcast logs to all connected clients
 export function broadcastLog(message: string) {
@@ -75,6 +83,38 @@ const server = http.createServer((req, res) => {
     return; // Don't fall through to 404
   }
   
+  // GET /captions-stream - SSE endpoint for real-time captions
+  else if (req.url === '/captions-stream' && req.method === 'GET') {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*'
+    });
+    
+    // Send initial connection message
+    res.write(`data: ${JSON.stringify({ type: 'connected', message: 'Caption stream connected' })}\n\n`);
+    
+    captionClients.push(res);
+    console.log('✅ Caption SSE client connected. Total clients:', captionClients.length);
+    
+    // Keep connection alive with periodic pings
+    const keepAliveInterval = setInterval(() => {
+      res.write(`: keepalive\n\n`);
+    }, 15000);
+    
+    req.on('close', () => {
+      clearInterval(keepAliveInterval);
+      const index = captionClients.indexOf(res);
+      if (index > -1) {
+        captionClients.splice(index, 1);
+      }
+      console.log('Caption SSE client disconnected. Remaining clients:', captionClients.length);
+    });
+    
+    return; // Don't fall through to 404
+  }
+  
   // POST /start - Receive Meet URL and start bot
   else if (req.url === '/start' && req.method === 'POST') {
     let body = '';
@@ -99,6 +139,7 @@ const server = http.createServer((req, res) => {
   
   // POST /save-captions - Receive captions from browser
   else if (req.url === '/save-captions' && req.method === 'POST') {
+    broadcastLog('🔥 /save-captions endpoint HIT!'); // Debug log
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', () => {
@@ -113,6 +154,8 @@ const server = http.createServer((req, res) => {
           for (const caption of data.captions) {
             const captionLog = `🗣️ [${caption.speaker}]: "${caption.text}"`;
             broadcastLog(captionLog);
+            // Also broadcast to dedicated caption stream
+            broadcastCaption(caption);
           }
           
           broadcastLog(`📝 Received ${data.captions.length} captions. Total: ${allCaptions.length}`);
@@ -241,8 +284,8 @@ const videoChunks: Buffer[] = [];
 let recordingStartTime: number | null = null;
 let lastRecordingDetails: {filename: string; size: string; duration: string} | null = null;
 
-// Storage for captions
-let allCaptions: Array<{ timestamp: string; speaker: string; text: string }> = [];
+// Storage for captions - exported so Node-side can push directly
+export let allCaptions: Array<{ timestamp: string; speaker: string; text: string }> = [];
 let captionFilePath: string | null = null;
 
 // Initialize Gemini AI (API key should be set in environment variable)

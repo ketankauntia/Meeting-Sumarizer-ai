@@ -2,7 +2,7 @@ import { Builder, Browser, By, Key, until, WebDriver } from 'selenium-webdriver'
 import { Options } from 'selenium-webdriver/chrome';
 
 import './server'; // Just run the server
-import { broadcastLog } from './server';
+import { broadcastLog, allCaptions, broadcastCaption } from './server';
 
 // Store active driver globally
 let activeDriver: WebDriver | null = null;
@@ -188,122 +188,125 @@ async function enableCaptions(driver: WebDriver) {
     // Wait for caption container to appear
     await driver.sleep(3000);
     
-    // Inject a simpler polling-based caption capture script
-    // This approach doesn't rely on finding a specific container - it polls ALL visible caption text
-    const captionScript = `
+    // Inject ONLY a lightweight buffer in the browser - NO FETCH (blocked by CSP)
+    // Node will pull captions via executeScript
+    const captionBufferScript = `
     (function() {
-      console.log('[Caption] Initializing POLLING-based caption capture...');
+      if (window.__captionBuffer) return 'already initialized';
       
-      window.captionCapture = {
-        captionData: [],
-        lastCaptionText: '',
-        pollInterval: null,
-        
-        start: function() {
-          console.log('[Caption] Starting caption polling...');
-          
-          // Poll every second for new captions
-          this.pollInterval = setInterval(() => {
-            const captionInfo = this.extractCaptions();
-            if (captionInfo && captionInfo.text && captionInfo.text !== this.lastCaptionText) {
-              this.captionData.push({
-                timestamp: new Date().toISOString(),
-                speaker: captionInfo.speaker || 'Unknown',
-                text: captionInfo.text
-              });
-              this.lastCaptionText = captionInfo.text;
-              console.log('[Caption] Captured:', captionInfo);
-            }
-          }, 1000);
-          
-          // Save to server every 5 seconds
-          setInterval(() => {
-            if (this.captionData.length > 0) {
-              console.log('[Caption] Sending', this.captionData.length, 'captions to server...');
-              fetch('http://localhost:3001/save-captions', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  recordingDate: new Date().toISOString(),
-                  captions: this.captionData.slice()
-                })
-              })
-              .then(r => {
-                if (r.ok) {
-                  console.log('[Caption] Saved to server!');
-                  this.captionData = [];
-                }
-              })
-              .catch(e => console.error('[Caption] Save error:', e));
-            }
-          }, 5000);
-          
-          return true;
-        },
-        
-        extractCaptions: function() {
-          // Primary approach: Use aria-label="Captions" which is the actual caption container
-          let container = document.querySelector('div[aria-label="Captions"]');
-          if (container) {
-            // Get all text divs (class contains "ygicle" or similar)
-            const textDivs = container.querySelectorAll('div.ygicle, div.VbkSUe, div[class*="ygicle"]');
-            let allText = '';
-            textDivs.forEach(div => {
-              const t = div.textContent?.trim();
-              if (t) allText += t + ' ';
-            });
-            
-            // If no specific text divs, get all text from container
-            if (!allText.trim()) {
-              allText = container.textContent?.trim() || '';
-            }
-            
-            // Get speaker from .KcIKyf .NWpY1d or similar
-            const speakerEl = container.querySelector('.NWpY1d, .KcIKyf, [class*="speaker"]');
-            const speaker = speakerEl?.textContent?.trim() || 'Participant';
-            
-            if (allText.trim().length > 0) {
-              console.log('[Caption] Found via aria-label:', { text: allText.trim(), speaker });
-              return { text: allText.trim(), speaker };
-            }
-          }
-          
-          // Fallback: Use jsname="dsyhDe" container
-          container = document.querySelector('div[jsname="dsyhDe"]');
-          if (container) {
-            const captionRegion = container.querySelector('[aria-label="Captions"]');
-            if (captionRegion) {
-              const text = captionRegion.textContent?.trim();
-              const speakerEl = container.querySelector('.NWpY1d, .KcIKyf');
-              if (text && text.length > 0) {
-                return { text, speaker: speakerEl?.textContent?.trim() || 'Participant' };
-              }
-            }
-          }
-          
-          return null;
-        },
-        
-        stop: function() {
-          if (this.pollInterval) {
-            clearInterval(this.pollInterval);
-            this.pollInterval = null;
-          }
-        }
+      console.log('[Caption] Initializing browser-side caption buffer...');
+      
+      window.__captionBuffer = {
+        lastText: '',
+        items: []
       };
-
-      return window.captionCapture.start();
+      
+      // Poll every 500ms and store in buffer
+      setInterval(() => {
+        const region = document.querySelector('div[role="region"][aria-label="Captions"]');
+        if (!region) return;
+        
+        const text = region.innerText?.trim() || '';
+        if (!text || text === window.__captionBuffer.lastText) return;
+        
+        // Extract delta (new text)
+        let delta = text;
+        if (text.startsWith(window.__captionBuffer.lastText)) {
+          delta = text.slice(window.__captionBuffer.lastText.length).trim();
+        }
+        
+        // Filter garbage
+        if (delta && 
+            delta.length > 2 && 
+            !delta.toLowerCase().includes('jump to') &&
+            !delta.toLowerCase().includes('arrow_downward')) {
+          window.__captionBuffer.items.push({
+            text: delta,
+            timestamp: Date.now()
+          });
+          console.log('[Caption] 📝 Buffered:', delta.substring(0, 50) + '...');
+        }
+        
+        window.__captionBuffer.lastText = text;
+      }, 500);
+      
+      return 'initialized';
     })();
     `;
     
-    const result = await driver.executeScript(captionScript);
-    if (result) {
-      broadcastLog('✅ Caption POLLING started successfully');
-    } else {
-      broadcastLog('⚠️ Caption polling may not be working');
-    }
+    const initResult = await driver.executeScript(captionBufferScript);
+    broadcastLog('✅ Caption buffer script injected: ' + initResult);
+    
+    // Log current caption region status
+    const regionCheck = await driver.executeScript(`
+      const region = document.querySelector('div[role="region"][aria-label="Captions"]');
+      return region ? 'Caption region found' : 'Caption region NOT found';
+    `);
+    broadcastLog('📝 ' + regionCheck);
+    
+    // Start Node-side caption pulling interval
+    startCaptionPulling(driver);
+    
   } catch (error) {
     broadcastLog('⚠️ Could not enable captions: ' + error);
+  }
+}
+
+// Node-side interval to pull captions from browser buffer
+let captionPullInterval: NodeJS.Timeout | null = null;
+
+function startCaptionPulling(driver: WebDriver) {
+  broadcastLog('🔄 Starting Node-side caption pulling (every 2s)...');
+  
+  captionPullInterval = setInterval(async () => {
+    try {
+      // Pull captions from browser buffer
+      const newCaptions = await driver.executeScript(`
+        const buf = window.__captionBuffer;
+        if (!buf || buf.items.length === 0) return [];
+        
+        // Get items and clear buffer
+        const items = buf.items.slice();
+        buf.items.length = 0;
+        return items;
+      `);
+      
+      if (Array.isArray(newCaptions) && newCaptions.length > 0) {
+        broadcastLog('📥 Pulled ' + newCaptions.length + ' captions from browser');
+        
+        for (const c of newCaptions) {
+          const caption = {
+            speaker: 'Participant',
+            text: c.text,
+            timestamp: new Date(c.timestamp).toISOString()
+          };
+          
+          // Push to allCaptions storage
+          allCaptions.push(caption);
+          
+          // Stream to UI via SSE
+          broadcastCaption(caption);
+          
+          // Broadcast to Activity Logs
+          broadcastLog('🗣️ [' + caption.speaker + ']: "' + caption.text + '"');
+        }
+      }
+    } catch (e) {
+      // Driver might be closed, stop pulling
+      if (captionPullInterval) {
+        clearInterval(captionPullInterval);
+        captionPullInterval = null;
+      }
+    }
+  }, 2000);
+}
+
+// Export for cleanup
+export function stopCaptionPulling() {
+  if (captionPullInterval) {
+    clearInterval(captionPullInterval);
+    captionPullInterval = null;
+    broadcastLog('⏹️ Stopped caption pulling');
   }
 }
 
@@ -469,6 +472,13 @@ async function stopRecordingAndLeave() {
 
   try {
     broadcastLog('🛑 Stopping recording and leaving meeting...');
+    
+    // Stop caption pulling first
+    if (captionPullInterval) {
+      clearInterval(captionPullInterval);
+      captionPullInterval = null;
+      broadcastLog('⏹️ Stopped caption pulling');
+    }
     
     // Stop the recording by executing script in browser
     await activeDriver.executeScript(`
