@@ -4,12 +4,14 @@ import { useState, useEffect, useRef } from 'react';
 
 export default function Home() {
   const [meetUrl, setMeetUrl] = useState('');
+  const [apiKey, setApiKey] = useState('');
   const [status, setStatus] = useState('idle'); // idle, recording, stopped
   const [error, setError] = useState('');
   const [logs, setLogs] = useState<string[]>([]);
   const [recordingDetails, setRecordingDetails] = useState<{filename: string; size: string; duration: string; captionsCount?: number} | null>(null);
   const [summary, setSummary] = useState<string>('');
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
+  const [showSummaryModal, setShowSummaryModal] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
 
@@ -79,7 +81,7 @@ export default function Home() {
       const response = await fetch('http://localhost:3001/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ meetUrl })
+        body: JSON.stringify({ meetUrl, apiKey })
       });
       
       const data = await response.json();
@@ -140,6 +142,7 @@ export default function Home() {
 
       if (response.ok && data.success) {
         setSummary(data.summary);
+        setShowSummaryModal(true);
       } else {
         setError(data.message || 'Failed to generate summary');
       }
@@ -215,39 +218,49 @@ export default function Home() {
           <div className="lg:col-span-1 space-y-4 sm:space-y-6">
             {/* URL Input Card */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-6 shadow-2xl">
-            <h2 className="text-base sm:text-lg text-white font-semibold mb-3 sm:mb-4 pb-3 sm:pb-4 border-b border-zinc-800">Meeting Setup</h2>
-
-            <div className="space-y-3 sm:space-y-4 pt-2">
-              <div>
-                <label className="block text-xs sm:text-sm font-medium text-gray-400 mb-2">
-                  Google Meet URL
-                </label>
-                <input
-                  type="text"
-                  value={meetUrl}
-                  onChange={(e) => setMeetUrl(e.target.value)}
-                  placeholder="https://meet.google.com/xxx-xxxx-xxx"
-                  disabled={status === 'recording'}
-                  className="w-full bg-black text-white text-sm sm:text-base px-3 sm:px-4 py-2.5 sm:py-3 border border-zinc-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-white disabled:opacity-50 disabled:cursor-not-allowed outline-none transition placeholder:text-gray-600"
-                />
-              </div>
-
-              {/* Error Message */}
-              {error && (
-                <div className="p-2.5 sm:p-3 bg-red-500/10 border border-red-500/50 rounded-lg">
-                  <div className="flex justify-center items-center gap-2">
-                    <span className="text-red-400 text-base sm:text-lg">⚠️</span>
-                    <p className="text-red-400 text-xs sm:text-sm">{error}</p>
-                  </div>
+              <div className="space-y-3 sm:space-y-4 pt-2">
+                <div>
+                  <label className="block text-xs sm:text-sm font-medium text-gray-400 mb-2">
+                    Google Meet URL
+                  </label>
+                  <input
+                    type="text"
+                    value={meetUrl}
+                    onChange={(e) => setMeetUrl(e.target.value)}
+                    placeholder="https://meet.google.com/xxx-xxxx-xxx"
+                    disabled={status === 'recording'}
+                    className="w-full bg-black text-white text-sm sm:text-base px-3 sm:px-4 py-2.5 sm:py-3 border border-zinc-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-white disabled:opacity-50 disabled:cursor-not-allowed outline-none transition placeholder:text-gray-600"
+                  />
                 </div>
-              )}
+
+                <div>
+                  <label className="block text-xs sm:text-sm font-medium text-gray-400 mb-2">
+                    Gemini API Key <span className="text-gray-600 font-normal">(optional)</span>
+                  </label>
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder="Enter your Gemini API Key"
+                    disabled={status === 'recording'}
+                    className="w-full bg-black text-white text-sm sm:text-base px-3 sm:px-4 py-2.5 sm:py-3 border border-zinc-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-white disabled:opacity-50 disabled:cursor-not-allowed outline-none transition placeholder:text-gray-600"
+                  />
+                </div>
+
+                {/* Error Message */}
+                {error && (
+                  <div className="p-2.5 sm:p-3 bg-red-500/10 border border-red-500/50 rounded-lg">
+                    <div className="flex justify-center items-center gap-2">
+                      <span className="text-red-400 text-base sm:text-lg">⚠️</span>
+                      <p className="text-red-400 text-xs sm:text-sm">{error}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
 
           {/* Control Buttons Card */}
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-6 shadow-2xl">
-            <h2 className="text-base sm:text-lg text-white font-semibold mb-3 sm:mb-4 pb-3 sm:pb-4 border-b border-zinc-800">Controls</h2>
-
             <div className="space-y-2.5 sm:space-y-3 pt-2">
               <button
                 onClick={handleStart}
@@ -329,65 +342,101 @@ export default function Home() {
             </div>
           )}
 
-          {/* Summary Display */}
-          {summary && (
-            <div className="bg-zinc-900 border border-blue-500/50 rounded-xl p-4 sm:p-6 shadow-2xl">
-              <div className="flex items-center gap-2 mb-3 sm:mb-4">
-                <span className="text-xl sm:text-2xl">📄</span>
-                <h3 className="text-base sm:text-lg font-semibold text-blue-400">AI Summary</h3>
-              </div>
-              <div className="prose prose-invert prose-sm max-w-none bg-black p-4 rounded-lg overflow-auto max-h-96">
-                <div className="text-gray-300 whitespace-pre-wrap text-xs sm:text-sm">
-                  {summary}
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
-         {/* Right Side - Activity Logs */}
-         <div className="lg:col-span-2">
-           <div className="bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden h-[500px] sm:h-[600px] lg:h-[700px]">
-            <div className="bg-black border-b border-zinc-800 px-4 sm:px-6 py-3 sm:py-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-base sm:text-lg text-white font-semibold">Activity Logs</h2>
-                  <p className="text-xs text-gray-500">Real-time bot activity stream</p>
-                </div>
-                <div className="flex items-center gap-1.5 sm:gap-2">
-                  <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-green-400 rounded-full animate-pulse"></div>
-                  <span className="text-xs text-gray-500">Live</span>
+          {/* Right Side - Activity Logs */}
+          <div className="lg:col-span-2">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden h-[500px] sm:h-[600px] lg:h-[700px]">
+              <div className="bg-black border-b border-zinc-800 px-4 sm:px-6 py-3 sm:py-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-base sm:text-lg text-white font-semibold">Activity Logs</h2>
+                    <p className="text-xs text-gray-500">Real-time bot activity stream</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 sm:gap-2">
+                    <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-green-400 rounded-full animate-pulse"></div>
+                    <span className="text-xs text-gray-500">Live</span>
+                  </div>
                 </div>
               </div>
-            </div>
-            
-            <div className="h-[calc(100%-60px)] sm:h-[calc(100%-72px)] overflow-y-auto p-4 sm:p-6 bg-black font-mono text-xs sm:text-sm">
-              {logs.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-gray-600">
-                  <div className="w-12 h-12 sm:w-16 sm:h-16 bg-zinc-900 rounded-full flex items-center justify-center mb-3 sm:mb-4">
-                    <span className="text-2xl sm:text-3xl">💤</span>
-                  </div>
-                  <p className="text-center text-sm sm:text-base">No activity yet</p>
-                  <p className="text-xs text-gray-700 mt-2 px-4 text-center">Start recording to see real-time logs...</p>
-                </div>
-              ) : (
-                <div className="space-y-0.5 sm:space-y-1">
-                  {logs.map((log, index) => (
-                    <div 
-                      key={index} 
-                      className="text-gray-300 hover:bg-zinc-900/50 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded transition-colors duration-150 break-all"
-                    >
-                      {log}
+              
+              <div className="h-[calc(100%-60px)] sm:h-[calc(100%-72px)] overflow-y-auto p-4 sm:p-6 bg-black font-mono text-xs sm:text-sm">
+                {logs.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-gray-600">
+                    <div className="w-12 h-12 sm:w-16 sm:h-16 bg-zinc-900 rounded-full flex items-center justify-center mb-3 sm:mb-4">
+                      <span className="text-2xl sm:text-3xl">💤</span>
                     </div>
-                  ))}
-                  <div ref={logsEndRef} />
-                </div>
-              )}
+                    <p className="text-center text-sm sm:text-base">No activity yet</p>
+                    <p className="text-xs text-gray-700 mt-2 px-4 text-center">Start recording to see real-time logs...</p>
+                  </div>
+                ) : (
+                  <div className="space-y-0.5 sm:space-y-1">
+                    {logs.map((log, index) => (
+                      <div 
+                        key={index} 
+                        className="text-gray-300 hover:bg-zinc-900/50 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded transition-colors duration-150 break-all"
+                      >
+                        {log}
+                      </div>
+                    ))}
+                    <div ref={logsEndRef} />
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
       </div>
-      </div>
+
+      {/* Summary Modal */}
+      {showSummaryModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-4 sm:p-6 border-b border-zinc-800">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">📄</span>
+                <h2 className="text-xl font-bold text-white">AI Meeting Summary</h2>
+              </div>
+              <button
+                onClick={() => setShowSummaryModal(false)}
+                className="text-gray-400 hover:text-white transition-colors p-2 hover:bg-zinc-800 rounded-lg"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            {/* Modal Content */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+              <div className="prose prose-invert prose-sm max-w-none">
+                <div className="text-gray-300 whitespace-pre-wrap text-sm leading-relaxed">
+                  {summary}
+                </div>
+              </div>
+            </div>
+            
+            {/* Modal Footer */}
+            <div className="p-4 sm:p-6 border-t border-zinc-800 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(summary);
+                }}
+                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg transition-colors text-sm font-medium"
+              >
+                📋 Copy
+              </button>
+              <button
+                onClick={() => setShowSummaryModal(false)}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

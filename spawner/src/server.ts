@@ -2,8 +2,9 @@ import WebSocket from 'ws';
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
+import { postProcessCaptions } from './postProcessCaptions';
 
 dotenv.config();
 
@@ -120,7 +121,14 @@ const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', async () => {
-      const { meetUrl } = JSON.parse(body);
+      const { meetUrl, apiKey } = JSON.parse(body);
+      
+      // Update session API key if provided
+      if (apiKey) {
+        sessionApiKey = apiKey;
+        broadcastLog('🔐 Session API Key updated');
+      }
+      
       currentMeetUrl = meetUrl;
       broadcastLog('📥 Received Meet URL: ' + meetUrl);
       
@@ -195,7 +203,20 @@ const server = http.createServer((req, res) => {
               captions: allCaptions
             }, null, 2));
             
-            broadcastLog(`📝 Saved ${allCaptions.length} captions to ${captionFileName}`);
+            broadcastLog(`📝 Saved ${allCaptions.length} raw captions to ${captionFileName}`);
+            
+            // Post-process captions for cleaner transcript
+            const cleanedCaptions = postProcessCaptions(allCaptions);
+            const cleanedFileName = `captions-cleaned-${timestamp}.json`;
+            const cleanedFilePath = path.join(recordingsDir, cleanedFileName);
+            
+            fs.writeFileSync(cleanedFilePath, JSON.stringify({
+              processedAt: new Date().toISOString(),
+              totalCaptions: cleanedCaptions.length,
+              captions: cleanedCaptions
+            }, null, 2));
+            
+            broadcastLog(`✨ Saved ${cleanedCaptions.length} cleaned captions to ${cleanedFileName}`);
           }
           
           // Include recording details in response
@@ -234,6 +255,10 @@ const server = http.createServer((req, res) => {
         
         broadcastLog('🤖 Generating AI summary...');
         const summary = await generateSummary(allCaptions);
+        
+        if (!summary) {
+          throw new Error('Summary generation returned null');
+        }
         
         // Save summary to file
         const recordingsDir = path.join(process.cwd(), 'recordings');
@@ -288,20 +313,27 @@ let lastRecordingDetails: {filename: string; size: string; duration: string} | n
 export let allCaptions: Array<{ timestamp: string; speaker: string; text: string }> = [];
 let captionFilePath: string | null = null;
 
-// Initialize Gemini AI (API key should be set in environment variable)
-const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
+// Storage for session API key
+let sessionApiKey: string | null = null;
+
+// Initialize Gemini AI (API key should be set in environment variable or passed in session)
+// const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
 
 async function generateSummary(captions: Array<{ timestamp: string; speaker: string; text: string }>) {
-  if (!genAI) {
-    throw new Error('GEMINI_API_KEY not set in environment variables');
+  const apiKey = sessionApiKey || process.env.GEMINI_API_KEY;
+  
+  if (!apiKey) {
+    broadcastLog('⚠️ Gemini API Key not found. Skipping summary generation.');
+    return null;
   }
   
+  const ai = new GoogleGenAI({ apiKey });
+  const modelName = 'gemini-3-flash-preview';
+  
   try {
-    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
-    
     // Format captions into a readable transcript
     const transcript = captions
-      .map(c => `[${c.timestamp}] ${c.speaker}: ${c.text}`)
+      .map(c => `${c.speaker}: ${c.text}`)
       .join('\n');
     
     const prompt = `You are an AI assistant that summarizes meeting transcripts. Please analyze the following meeting transcript and provide:
@@ -318,9 +350,29 @@ ${transcript}
 
 Please provide a well-structured summary in markdown format.`;
     
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const summary = response.text();
+    broadcastLog(`🧠 Generating summary with ${modelName}...`);
+    
+    const response = await ai.models.generateContent({
+      model: modelName,
+      contents: [{
+        role: 'user',
+        parts: [{ text: prompt }]
+      }]
+    });
+    
+    // Safety checks
+    if (!response.candidates || response.candidates.length === 0) {
+      throw new Error('Gemini returned no results');
+    }
+    
+    const candidate = response.candidates[0];
+    
+    if (!candidate.content || !candidate.content.parts) {
+      throw new Error('Response structure is missing content parts');
+    }
+    
+    const summary = candidate.content.parts[0].text;
+    broadcastLog('✅ Summary generated successfully');
     
     return summary;
   } catch (error) {

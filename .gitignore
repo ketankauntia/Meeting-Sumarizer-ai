@@ -8,3 +8,5 @@ prompt.txt
 check.ts
 index1.ts
 index-cp.ts
+
+.env
