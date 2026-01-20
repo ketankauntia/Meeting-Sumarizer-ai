@@ -48,8 +48,7 @@ function openMeet(driver, meetUrl) {
 function getDriver() {
     return __awaiter(this, void 0, void 0, function* () {
         (0, server_1.broadcastLog)('📝 Starting Chrome...');
-        const chrome = require('selenium-webdriver/chrome');
-        const service = new chrome.ServiceBuilder(require('chromedriver').path);
+        // Let Selenium Manager automatically download the correct ChromeDriver
         const chromeOptions = new chrome_1.Options();
         chromeOptions.addArguments('--disable-blink-features=AutomationControlled');
         chromeOptions.addArguments('--use-fake-ui-for-media-stream');
@@ -58,11 +57,9 @@ function getDriver() {
         chromeOptions.addArguments('--no-sandbox');
         chromeOptions.addArguments('--disable-dev-shm-usage');
         chromeOptions.addArguments('--disable-gpu');
-        // broadcastLog('🚗 Building Chrome WebDriver...');
         let driver = yield new selenium_webdriver_1.Builder()
             .forBrowser(selenium_webdriver_1.Browser.CHROME)
             .setChromeOptions(chromeOptions)
-            .setChromeService(service)
             .build();
         (0, server_1.broadcastLog)('✅ Chrome ready!');
         return driver;
@@ -90,6 +87,212 @@ function leaveMeeting(driver) {
             catch (e) {
                 (0, server_1.broadcastLog)('❌ Could not find leave button');
             }
+        }
+    });
+}
+function enableCaptions(driver) {
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            (0, server_1.broadcastLog)('📝 Enabling captions...');
+            // First wait for the meeting controls to be visible (class "axUSnc" is the controls bar)
+            try {
+                yield driver.wait(selenium_webdriver_1.until.elementLocated(selenium_webdriver_1.By.className("axUSnc")), 15000);
+                (0, server_1.broadcastLog)('✅ Meeting controls visible');
+            }
+            catch (e) {
+                (0, server_1.broadcastLog)('⚠️ Meeting controls not found, trying anyway...');
+            }
+            // Dismiss ALL popups - try multiple times and multiple selectors
+            (0, server_1.broadcastLog)('🔍 Looking for popups to dismiss...');
+            for (let i = 0; i < 3; i++) {
+                yield driver.sleep(1000);
+                // Try clicking "Got it" button in various ways
+                try {
+                    // Method 1: Find button containing "Got it" text
+                    const buttons = yield driver.findElements(selenium_webdriver_1.By.xpath("//button[.//span[contains(text(),'Got it')]]"));
+                    for (const btn of buttons) {
+                        try {
+                            yield driver.executeScript("arguments[0].click();", btn);
+                            (0, server_1.broadcastLog)('✅ Clicked "Got it" button');
+                            yield driver.sleep(500);
+                        }
+                        catch (e) { }
+                    }
+                }
+                catch (e) { }
+                try {
+                    // Method 2: Find span with "Got it" and click it
+                    const spans = yield driver.findElements(selenium_webdriver_1.By.xpath("//span[contains(text(),'Got it')]"));
+                    for (const span of spans) {
+                        try {
+                            yield driver.executeScript("arguments[0].click();", span);
+                            (0, server_1.broadcastLog)('✅ Clicked "Got it" span');
+                            yield driver.sleep(500);
+                        }
+                        catch (e) { }
+                    }
+                }
+                catch (e) { }
+                try {
+                    // Method 3: Look for any dismiss/close buttons
+                    const closeButtons = yield driver.findElements(selenium_webdriver_1.By.css('[aria-label*="Close"], [aria-label*="Dismiss"]'));
+                    for (const btn of closeButtons) {
+                        try {
+                            yield driver.executeScript("arguments[0].click();", btn);
+                            yield driver.sleep(300);
+                        }
+                        catch (e) { }
+                    }
+                }
+                catch (e) { }
+            }
+            yield driver.sleep(1000);
+            // Find the caption button - try multiple selectors
+            let captionButton = null;
+            const selectors = [
+                'button[aria-label="Turn on captions"]',
+                'button[aria-label="Turn on captions (c)"]',
+                'button[data-tooltip-id*="caption"]',
+                '[aria-label*="caption" i]'
+            ];
+            for (const selector of selectors) {
+                try {
+                    captionButton = yield driver.findElement(selenium_webdriver_1.By.css(selector));
+                    if (captionButton) {
+                        (0, server_1.broadcastLog)(`📝 Found caption button with: ${selector}`);
+                        break;
+                    }
+                }
+                catch (e) {
+                    // Try next selector
+                }
+            }
+            if (!captionButton) {
+                (0, server_1.broadcastLog)('❌ Caption button not found with any selector');
+                return;
+            }
+            // Use JavaScript click to avoid overlay issues
+            yield driver.executeScript("arguments[0].click();", captionButton);
+            (0, server_1.broadcastLog)('✅ Captions turned ON');
+            // Wait for caption container to appear
+            yield driver.sleep(3000);
+            // Inject a simpler polling-based caption capture script
+            // This approach doesn't rely on finding a specific container - it polls ALL visible caption text
+            const captionScript = `
+    (function() {
+      console.log('[Caption] Initializing POLLING-based caption capture...');
+      
+      window.captionCapture = {
+        captionData: [],
+        lastCaptionText: '',
+        pollInterval: null,
+        
+        start: function() {
+          console.log('[Caption] Starting caption polling...');
+          
+          // Poll every second for new captions
+          this.pollInterval = setInterval(() => {
+            const captionInfo = this.extractCaptions();
+            if (captionInfo && captionInfo.text && captionInfo.text !== this.lastCaptionText) {
+              this.captionData.push({
+                timestamp: new Date().toISOString(),
+                speaker: captionInfo.speaker || 'Unknown',
+                text: captionInfo.text
+              });
+              this.lastCaptionText = captionInfo.text;
+              console.log('[Caption] Captured:', captionInfo);
+            }
+          }, 1000);
+          
+          // Save to server every 5 seconds
+          setInterval(() => {
+            if (this.captionData.length > 0) {
+              console.log('[Caption] Sending', this.captionData.length, 'captions to server...');
+              fetch('http://localhost:3001/save-captions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  recordingDate: new Date().toISOString(),
+                  captions: this.captionData.slice()
+                })
+              })
+              .then(r => {
+                if (r.ok) {
+                  console.log('[Caption] Saved to server!');
+                  this.captionData = [];
+                }
+              })
+              .catch(e => console.error('[Caption] Save error:', e));
+            }
+          }, 5000);
+          
+          return true;
+        },
+        
+        extractCaptions: function() {
+          // Primary approach: Use aria-label="Captions" which is the actual caption container
+          let container = document.querySelector('div[aria-label="Captions"]');
+          if (container) {
+            // Get all text divs (class contains "ygicle" or similar)
+            const textDivs = container.querySelectorAll('div.ygicle, div.VbkSUe, div[class*="ygicle"]');
+            let allText = '';
+            textDivs.forEach(div => {
+              const t = div.textContent?.trim();
+              if (t) allText += t + ' ';
+            });
+            
+            // If no specific text divs, get all text from container
+            if (!allText.trim()) {
+              allText = container.textContent?.trim() || '';
+            }
+            
+            // Get speaker from .KcIKyf .NWpY1d or similar
+            const speakerEl = container.querySelector('.NWpY1d, .KcIKyf, [class*="speaker"]');
+            const speaker = speakerEl?.textContent?.trim() || 'Participant';
+            
+            if (allText.trim().length > 0) {
+              console.log('[Caption] Found via aria-label:', { text: allText.trim(), speaker });
+              return { text: allText.trim(), speaker };
+            }
+          }
+          
+          // Fallback: Use jsname="dsyhDe" container
+          container = document.querySelector('div[jsname="dsyhDe"]');
+          if (container) {
+            const captionRegion = container.querySelector('[aria-label="Captions"]');
+            if (captionRegion) {
+              const text = captionRegion.textContent?.trim();
+              const speakerEl = container.querySelector('.NWpY1d, .KcIKyf');
+              if (text && text.length > 0) {
+                return { text, speaker: speakerEl?.textContent?.trim() || 'Participant' };
+              }
+            }
+          }
+          
+          return null;
+        },
+        
+        stop: function() {
+          if (this.pollInterval) {
+            clearInterval(this.pollInterval);
+            this.pollInterval = null;
+          }
+        }
+      };
+
+      return window.captionCapture.start();
+    })();
+    `;
+            const result = yield driver.executeScript(captionScript);
+            if (result) {
+                (0, server_1.broadcastLog)('✅ Caption POLLING started successfully');
+            }
+            else {
+                (0, server_1.broadcastLog)('⚠️ Caption polling may not be working');
+            }
+        }
+        catch (error) {
+            (0, server_1.broadcastLog)('⚠️ Could not enable captions: ' + error);
         }
     });
 }
@@ -303,6 +506,8 @@ function main(meetUrl) {
             (0, server_1.broadcastLog)('⏰ Waiting 20 seconds for host approval...');
             yield new Promise((x) => setTimeout(x, 20000));
             //wait until the admin approves the bot to join
+            //enable captions
+            yield enableCaptions(driver);
             //starting screensharing
             yield startScreenshare(driver);
         }

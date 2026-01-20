@@ -108,7 +108,14 @@ const server = http.createServer((req, res) => {
         // Append captions to our storage
         if (data.captions && Array.isArray(data.captions)) {
           allCaptions.push(...data.captions);
-          console.log(`📝 Received ${data.captions.length} captions. Total: ${allCaptions.length}`);
+          
+          // Log each caption to console and broadcast to frontend
+          for (const caption of data.captions) {
+            const captionLog = `🗣️ [${caption.speaker}]: "${caption.text}"`;
+            broadcastLog(captionLog);
+          }
+          
+          broadcastLog(`📝 Received ${data.captions.length} captions. Total: ${allCaptions.length}`);
         }
         
         res.writeHead(200, { 'Content-Type': 'application/json' });

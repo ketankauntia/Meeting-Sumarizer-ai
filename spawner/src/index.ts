@@ -52,9 +52,7 @@ async function openMeet(driver: WebDriver, meetUrl: string) {
 async function getDriver() {
   broadcastLog('📝 Starting Chrome...');
   
-  const chrome = require('selenium-webdriver/chrome');
-  const service = new chrome.ServiceBuilder(require('chromedriver').path);
-  
+  // Let Selenium Manager automatically download the correct ChromeDriver
   const chromeOptions = new Options();
   chromeOptions.addArguments('--disable-blink-features=AutomationControlled');
   chromeOptions.addArguments('--use-fake-ui-for-media-stream');
@@ -64,11 +62,9 @@ async function getDriver() {
   chromeOptions.addArguments('--disable-dev-shm-usage');
   chromeOptions.addArguments('--disable-gpu');
   
-  // broadcastLog('🚗 Building Chrome WebDriver...');
   let driver = await new Builder()
     .forBrowser(Browser.CHROME)
     .setChromeOptions(chromeOptions)
-    .setChromeService(service)
     .build();
 
   broadcastLog('✅ Chrome ready!');
@@ -106,147 +102,206 @@ async function leaveMeeting(driver: WebDriver) {
 async function enableCaptions(driver: WebDriver) {
   try {
     broadcastLog('📝 Enabling captions...');
-    const captionButton = await driver.wait(
-      until.elementLocated(By.css('button[aria-label="Turn on captions"]')),
-      10000
-    );
-    await captionButton.click();
-    broadcastLog('✅ Captions enabled');
     
-    // Wait for caption container to load
-    await driver.sleep(2000);
+    // First wait for the meeting controls to be visible (class "axUSnc" is the controls bar)
+    try {
+      await driver.wait(until.elementLocated(By.className("axUSnc")), 15000);
+      broadcastLog('✅ Meeting controls visible');
+    } catch (e) {
+      broadcastLog('⚠️ Meeting controls not found, trying anyway...');
+    }
     
-    // Inject caption capture script
-    const captionScript = `
-    window.captionObserver = {
-      observer: null,
-      captionData: [],
-      lastCaption: null,
-      debounceTimeout: null,
+    // Dismiss ALL popups - try multiple times and multiple selectors
+    broadcastLog('🔍 Looking for popups to dismiss...');
+    for (let i = 0; i < 3; i++) {
+      await driver.sleep(1000);
       
-      init: function() {
-        const mainContainer = document.querySelector('div[jsname="dsyhDe"]');
-        if (!mainContainer) {
-          console.error('[Caption] Main caption container not found');
-          return false;
+      // Try clicking "Got it" button in various ways
+      try {
+        // Method 1: Find button containing "Got it" text
+        const buttons = await driver.findElements(By.xpath("//button[.//span[contains(text(),'Got it')]]"));
+        for (const btn of buttons) {
+          try {
+            await driver.executeScript("arguments[0].click();", btn);
+            broadcastLog('✅ Clicked "Got it" button');
+            await driver.sleep(500);
+          } catch (e) {}
         }
+      } catch (e) {}
+      
+      try {
+        // Method 2: Find span with "Got it" and click it
+        const spans = await driver.findElements(By.xpath("//span[contains(text(),'Got it')]"));
+        for (const span of spans) {
+          try {
+            await driver.executeScript("arguments[0].click();", span);
+            broadcastLog('✅ Clicked "Got it" span');
+            await driver.sleep(500);
+          } catch (e) {}
+        }
+      } catch (e) {}
+      
+      try {
+        // Method 3: Look for any dismiss/close buttons
+        const closeButtons = await driver.findElements(By.css('[aria-label*="Close"], [aria-label*="Dismiss"]'));
+        for (const btn of closeButtons) {
+          try {
+            await driver.executeScript("arguments[0].click();", btn);
+            await driver.sleep(300);
+          } catch (e) {}
+        }
+      } catch (e) {}
+    }
+    
+    await driver.sleep(1000);
+    
+    // Find the caption button - try multiple selectors
+    let captionButton = null;
+    const selectors = [
+      'button[aria-label="Turn on captions"]',
+      'button[aria-label="Turn on captions (c)"]',
+      'button[data-tooltip-id*="caption"]',
+      '[aria-label*="caption" i]'
+    ];
+    
+    for (const selector of selectors) {
+      try {
+        captionButton = await driver.findElement(By.css(selector));
+        if (captionButton) {
+          broadcastLog(`📝 Found caption button with: ${selector}`);
+          break;
+        }
+      } catch (e) {
+        // Try next selector
+      }
+    }
+    
+    if (!captionButton) {
+      broadcastLog('❌ Caption button not found with any selector');
+      return;
+    }
+    
+    // Use JavaScript click to avoid overlay issues
+    await driver.executeScript("arguments[0].click();", captionButton);
+    broadcastLog('✅ Captions turned ON');
+    
+    // Wait for caption container to appear
+    await driver.sleep(3000);
+    
+    // Inject a simpler polling-based caption capture script
+    // This approach doesn't rely on finding a specific container - it polls ALL visible caption text
+    const captionScript = `
+    (function() {
+      console.log('[Caption] Initializing POLLING-based caption capture...');
+      
+      window.captionCapture = {
+        captionData: [],
+        lastCaptionText: '',
+        pollInterval: null,
         
-        this.observer = new MutationObserver((mutations) => {
-          for (const mutation of mutations) {
-            if (mutation.type === 'childList' || mutation.type === 'characterData') {
-              if (this.debounceTimeout) {
-                clearTimeout(this.debounceTimeout);
-              }
-              
-              this.debounceTimeout = setTimeout(() => {
-                const caption = this.getCurrentCaptionState(mainContainer);
-                if (caption && this.shouldRecordCaption(caption)) {
-                  this.captionData.push({
-                    timestamp: new Date().toISOString(),
-                    speaker: caption.speaker,
-                    text: caption.text
-                  });
-                  
-                  this.lastCaption = {
-                    ...caption,
-                    timestamp: Date.now()
-                  };
-                  
-                  console.log('[Caption] New caption:', caption);
+        start: function() {
+          console.log('[Caption] Starting caption polling...');
+          
+          // Poll every second for new captions
+          this.pollInterval = setInterval(() => {
+            const captionInfo = this.extractCaptions();
+            if (captionInfo && captionInfo.text && captionInfo.text !== this.lastCaptionText) {
+              this.captionData.push({
+                timestamp: new Date().toISOString(),
+                speaker: captionInfo.speaker || 'Unknown',
+                text: captionInfo.text
+              });
+              this.lastCaptionText = captionInfo.text;
+              console.log('[Caption] Captured:', captionInfo);
+            }
+          }, 1000);
+          
+          // Save to server every 5 seconds
+          setInterval(() => {
+            if (this.captionData.length > 0) {
+              console.log('[Caption] Sending', this.captionData.length, 'captions to server...');
+              fetch('http://localhost:3001/save-captions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  recordingDate: new Date().toISOString(),
+                  captions: this.captionData.slice()
+                })
+              })
+              .then(r => {
+                if (r.ok) {
+                  console.log('[Caption] Saved to server!');
+                  this.captionData = [];
                 }
-              }, 300);
+              })
+              .catch(e => console.error('[Caption] Save error:', e));
+            }
+          }, 5000);
+          
+          return true;
+        },
+        
+        extractCaptions: function() {
+          // Primary approach: Use aria-label="Captions" which is the actual caption container
+          let container = document.querySelector('div[aria-label="Captions"]');
+          if (container) {
+            // Get all text divs (class contains "ygicle" or similar)
+            const textDivs = container.querySelectorAll('div.ygicle, div.VbkSUe, div[class*="ygicle"]');
+            let allText = '';
+            textDivs.forEach(div => {
+              const t = div.textContent?.trim();
+              if (t) allText += t + ' ';
+            });
+            
+            // If no specific text divs, get all text from container
+            if (!allText.trim()) {
+              allText = container.textContent?.trim() || '';
+            }
+            
+            // Get speaker from .KcIKyf .NWpY1d or similar
+            const speakerEl = container.querySelector('.NWpY1d, .KcIKyf, [class*="speaker"]');
+            const speaker = speakerEl?.textContent?.trim() || 'Participant';
+            
+            if (allText.trim().length > 0) {
+              console.log('[Caption] Found via aria-label:', { text: allText.trim(), speaker });
+              return { text: allText.trim(), speaker };
             }
           }
-        });
-        
-        this.observer.observe(mainContainer, {
-          childList: true,
-          subtree: true,
-          characterData: true,
-          attributes: false,
-        });
-        
-        console.log('[Caption] Caption observer initialized');
-        this.startPeriodicSaving();
-        return true;
-      },
-      
-      getCurrentCaptionState: function(container) {
-        try {
-          const captionElement = container.querySelector('div[jsname="tgaKEf"] span:last-child');
-          const speakerElement = container.querySelector('.KcIKyf');
           
-          if (captionElement && speakerElement) {
-            return {
-              text: captionElement.textContent.trim(),
-              speaker: speakerElement.textContent.trim()
-            };
+          // Fallback: Use jsname="dsyhDe" container
+          container = document.querySelector('div[jsname="dsyhDe"]');
+          if (container) {
+            const captionRegion = container.querySelector('[aria-label="Captions"]');
+            if (captionRegion) {
+              const text = captionRegion.textContent?.trim();
+              const speakerEl = container.querySelector('.NWpY1d, .KcIKyf');
+              if (text && text.length > 0) {
+                return { text, speaker: speakerEl?.textContent?.trim() || 'Participant' };
+              }
+            }
           }
-          return null;
-        } catch (error) {
-          console.error('[Caption] Error getting caption state:', error);
-          return null;
-        }
-      },
-      
-      shouldRecordCaption: function(caption) {
-        if (!this.lastCaption) return true;
-        if (!caption.text) return false;
-        
-        const isSameContent = 
-          this.lastCaption.speaker === caption.speaker && 
-          this.lastCaption.text === caption.text;
           
-        const timeSinceLastCaption = Date.now() - this.lastCaption.timestamp;
+          return null;
+        },
         
-        return !isSameContent || timeSinceLastCaption > 1000;
-      },
-      
-      startPeriodicSaving: async function() {
-        setInterval(() => {
-          if (this.captionData.length > 0) {
-            const transcript = {
-              recordingDate: new Date().toISOString(),
-              captions: this.captionData.slice()
-            };
-            
-            console.log('[Caption] Saving batch:', this.captionData.length, 'captions');
-            
-            fetch('http://localhost:3001/save-captions', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(transcript)
-            })
-            .then(() => {
-              this.captionData = [];
-              console.log('[Caption] Captions saved successfully');
-            })
-            .catch(err => {
-              console.error('[Caption] Error saving captions:', err);
-            });
+        stop: function() {
+          if (this.pollInterval) {
+            clearInterval(this.pollInterval);
+            this.pollInterval = null;
           }
-        }, 5000);
-      },
-      
-      stop: function() {
-        if (this.observer) {
-          this.observer.disconnect();
-          this.observer = null;
-          if (this.debounceTimeout) {
-            clearTimeout(this.debounceTimeout);
-          }
-          console.log('[Caption] Caption observer stopped');
         }
-      }
-    };
+      };
 
-    window.captionObserver.init();
+      return window.captionCapture.start();
+    })();
     `;
     
-    await driver.executeScript(captionScript);
-    broadcastLog('✅ Caption capture initialized');
+    const result = await driver.executeScript(captionScript);
+    if (result) {
+      broadcastLog('✅ Caption POLLING started successfully');
+    } else {
+      broadcastLog('⚠️ Caption polling may not be working');
+    }
   } catch (error) {
     broadcastLog('⚠️ Could not enable captions: ' + error);
   }

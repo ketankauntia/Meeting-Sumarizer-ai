@@ -1,13 +1,13 @@
 UI : <img width="1920" height="859" alt="image" src="https://github.com/user-attachments/assets/6c6dbc6e-0e08-4043-b91c-1a8ff4553797" />
 
 
-1. Install all packages
+1. Open 2 terminals and Install all packages 
 ```
     cd frontend
     npm i
+```
 
-    cd ..
-
+```
     cd spawner
     npm i
 ```
@@ -29,10 +29,6 @@ Add teh gemini api key there :-
 GEMINI_API_KEY=your_actual_api_key_here
 ```
 
-**Example:**
-```env
-GEMINI_API_KEY=AIzaSyC1234567890abcdefghijklmnopqrstuvwx
-```
 
 3. open two new terminals and paste the following in each terminal
 
@@ -47,3 +43,14 @@ GEMINI_API_KEY=AIzaSyC1234567890abcdefghijklmnopqrstuvwx
 ```
 
 4. now you can test the application.
+
+---
+
+## 🔧 Troubleshooting
+
+If you encounter a **ChromeDriver version mismatch error** like:
+```
+SessionNotCreatedError: session not created: This version of ChromeDriver only supports Chrome version X
+```
+
+See the detailed troubleshooting guide in [`spawner/README.md`](./spawner/README.md#-troubleshooting-chromedriver-version-mismatch).
